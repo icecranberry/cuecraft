@@ -1,199 +1,14 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Check, CloudUpload, Download, Grid2x2, History, Loader2, Redo2, Ruler, Save, Undo2 } from 'lucide-react';
-import { CueScene } from '../three/Scene';
+import { CloudUpload, Save, Grid2x2 } from 'lucide-react';
 import { resolveTemplate } from '../cue/templates';
 import { useStore } from '../state/store';
 import { glRef, exportPrintPng, previewUnfold } from '../export/exportPng';
 import type { ExportOptions } from '../export/exportPng';
 import { buildUnfoldTemplate, sheetPixels } from '../cue/unwrap';
 import { Badge, Button, Dialog, Field, NumberInput, Collapse, Select, Toggle } from '../ui/components';
-import { LeftDrawer, RightPanel } from './panels';
-import { GenerateDrawer } from './GenerateDrawer';
-import { nextStickerId } from '../state/store';
-import { loadImage } from '../state/imageStore';
-
-// 球杆设计工作台（plan.md §3.1）：球杆居中，左侧统一抽屉（部件／图层／素材），右侧当前对象属性。
-
-export function Workbench() {
-  const cueTemplateId = useStore((s) => s.design.cueTemplateId);
-  const tpl = useMemo(() => resolveTemplate(cueTemplateId), [cueTemplateId]);
-  return (
-    <div className="flex h-full min-h-0 flex-col">
-      <TopBar />
-      <div className="relative flex min-h-0 flex-1">
-        <div className="relative min-w-0 flex-1">
-          <CueScene tpl={tpl} />
-          <DrawerToggle />
-          <LeftDrawer tpl={tpl} />
-          <ViewBar />
-        </div>
-        <div className="w-80 shrink-0 border-l border-ink-700 bg-ink-900">
-          <RightPanel tpl={tpl} />
-        </div>
-      </div>
-      <GenerateDrawer />
-      <ExportDialog tpl={tpl} />
-      <UnfoldCheckDialog tpl={tpl} />
-      <VersionsDialog tpl={tpl} />
-      <input
-        id="global-upload"
-        type="file"
-        accept="image/*"
-        multiple
-        hidden
-        onChange={(e) => {
-          const files = e.target.files;
-          if (!files?.length) return;
-          void handleUploadFiles(files);
-          e.target.value = '';
-        }}
-      />
-    </div>
-  );
-}
-
-export async function handleUploadFiles(files: FileList) {
-  for (const f of Array.from(files)) {
-    if (!f.type.startsWith('image/')) continue;
-    const url = URL.createObjectURL(f);
-    const img = await loadImage(url).catch(() => null);
-    URL.revokeObjectURL(url);
-    const id = nextStickerId().replace('st-', 'as-');
-    useStore.getState().addAsset(
-      {
-        id,
-        name: f.name.replace(/\.[^.]+$/, '').slice(0, 24),
-        source: 'upload',
-        tags: [],
-        w: img?.naturalWidth ?? 512,
-        h: img?.naturalHeight ?? 512,
-        blobKey: `blob:${id}`,
-        createdAt: Date.now()
-      },
-      f
-    );
-  }
-  useStore.getState().showToast('素材已入库，点击图案即可放置到杆身');
-}
-
-function DrawerToggle() {
-  const open = useStore((s) => s.leftDrawerOpen);
-  return (
-    <button
-      onClick={() => useStore.setState({ leftDrawerOpen: !open })}
-      title={open ? '收起面板' : '展开面板'}
-      className={`absolute top-3 z-30 flex h-9 w-9 items-center justify-center rounded-lg border border-ink-600 bg-ink-900/95 text-ink-200 shadow-xl backdrop-blur transition-all duration-200 hover:bg-ink-750 ${
-        open ? 'left-[17.75rem]' : 'left-3'
-      }`}
-    >
-      <svg viewBox="0 0 16 16" className={`h-4 w-4 transition-transform duration-200 ${open ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" strokeWidth="1.6">
-        <path d="M10 3 L5 8 L10 13" strokeLinecap="round" strokeLinejoin="round" />
-      </svg>
-    </button>
-  );
-}
-
-function TopBar() {
-  const design = useStore((s) => s.design);
-  const saveState = useStore((s) => s.saveState);
-  const past = useStore((s) => s.past);
-  const future = useStore((s) => s.future);
-  return (
-    <div className="flex h-12 shrink-0 items-center gap-2 border-b border-ink-700 bg-ink-900 px-3">
-      <input
-        value={design.name}
-        onChange={(e) => useStore.getState().renameDesign(e.target.value)}
-        className="h-8 w-36 shrink-0 rounded-md border border-transparent bg-transparent px-2 text-sm font-medium text-ink-100 outline-none transition-colors hover:border-ink-600 focus:border-accent-500"
-      />
-      <SaveStateBadge state={saveState} />
-      <div className="mx-0.5 h-6 w-px shrink-0 bg-ink-700" />
-      <div className="shrink-0 text-xs text-ink-300">
-        大头杆 · {resolveTemplate(design.cueTemplateId).lengthMm} mm
-      </div>
-      <div className="flex-1" />
-      <div className="flex shrink-0 items-center gap-1 whitespace-nowrap">
-        <Button variant="ghost" size="icon" title="撤销" onClick={() => useStore.getState().undo()} disabled={!past.length}>
-          <Undo2 size={15} />
-        </Button>
-        <Button variant="ghost" size="icon" title="重做" onClick={() => useStore.getState().redo()} disabled={!future.length}>
-          <Redo2 size={15} />
-        </Button>
-        <span className="mx-0.5 h-6 w-px bg-ink-700" />
-        <Button variant="outline" size="sm" onClick={() => useStore.getState().set({ versionsOpen: true })}>
-          <History size={13} /> 版本
-        </Button>
-        <Button variant="outline" size="sm" onClick={() => useStore.getState().set({ exportOpen: 'check' })}>
-          <Ruler size={13} /> 展开检查
-        </Button>
-        <Button variant="primary" size="sm" onClick={() => useStore.getState().set({ exportOpen: true })}>
-          <Download size={13} /> 导出 PNG
-        </Button>
-      </div>
-    </div>
-  );
-}
-
-function SaveStateBadge({ state }: { state: 'saved' | 'saving' | 'error' }) {
-  if (state === 'saving') {
-    return (
-      <span className="flex shrink-0 items-center gap-1 text-xxs text-ink-400">
-        <Loader2 size={11} className="animate-spin" /> 保存中
-      </span>
-    );
-  }
-  if (state === 'error') {
-    return <span className="shrink-0 text-xxs text-red-300">保存失败</span>;
-  }
-  return (
-    <span className="flex shrink-0 items-center gap-1 text-xxs text-ink-500">
-      <Check size={11} className="text-emerald-400" /> 已保存
-    </span>
-  );
-}
-
-function ViewBar() {
-  const view = useStore((s) => s.view);
-  const fps = useStore((s) => s.fps);
-  const placementAssetId = useStore((s) => s.placementAssetId);
-  const views: { id: typeof view; label: string }[] = [
-    { id: 'whole', label: '整杆' },
-    { id: 'shaft', label: '前节' },
-    { id: 'butt', label: '后把' },
-    { id: 'joint', label: '接头' },
-    { id: 'face', label: '端面' }
-  ];
-  const current = view === 'focus' ? 'focus' : view;
-  return (
-    <div className="pointer-events-none absolute bottom-3 left-1/2 z-10 flex -translate-x-1/2 flex-col items-center gap-2">
-      {placementAssetId && (
-        <div className="pointer-events-auto rounded-lg border border-accent-500/50 bg-accent-500/15 px-3 py-1.5 text-xs text-accent-400 shadow-xl backdrop-blur">
-          点击杆身放置图案 · 按 Esc 取消
-        </div>
-      )}
-      <div className="pointer-events-auto flex items-center gap-0.5 rounded-lg border border-ink-700 bg-ink-900/95 p-1 shadow-xl backdrop-blur">
-        {views.map((v) => (
-          <button
-            key={v.id}
-            onClick={() => useStore.setState((st) => ({ view: v.id, focusPartId: null, viewNonce: st.viewNonce + 1 }))}
-            className={`rounded px-2.5 py-1 text-xs transition-all duration-150 ${
-              view === v.id ? 'bg-ink-600 text-ink-100' : 'text-ink-400 hover:text-ink-200'
-            }`}
-          >
-            {v.label}
-          </button>
-        ))}
-        <span className="mx-1 h-4 w-px bg-ink-700" />
-        <span className="px-1.5 text-xxs text-ink-500" title="滚轮缩放 · 拖动空白处旋转 · 双击部件聚焦">
-          {import.meta.env.DEV ? `${fps} fps · ` : ''}双击聚焦
-        </span>
-      </div>
-    </div>
-  );
-}
-
 // —— 导出对话框 ——
 
-function ExportDialog({ tpl }: { tpl: ReturnType<typeof resolveTemplate> }) {
+export function ExportDialog({ tpl }: { tpl: ReturnType<typeof resolveTemplate> }) {
   const openRaw = useStore((s) => s.exportOpen);
   const open = openRaw === true;
   const design = useStore((s) => s.design);
@@ -320,7 +135,7 @@ function ExportDialog({ tpl }: { tpl: ReturnType<typeof resolveTemplate> }) {
 
 // —— 展开检查对话框 ——
 
-function UnfoldCheckDialog({ tpl }: { tpl: ReturnType<typeof resolveTemplate> }) {
+export function UnfoldCheckDialog({ tpl }: { tpl: ReturnType<typeof resolveTemplate> }) {
   const exportOpen = useStore((s) => s.exportOpen);
   const open = exportOpen === 'check';
   const design = useStore((s) => s.design);
@@ -379,7 +194,7 @@ function UnfoldCheckDialog({ tpl }: { tpl: ReturnType<typeof resolveTemplate> })
 
 // —— 版本对话框 ——
 
-function VersionsDialog({ tpl }: { tpl: ReturnType<typeof resolveTemplate> }) {
+export function VersionsDialog({ tpl }: { tpl: ReturnType<typeof resolveTemplate> }) {
   const open = useStore((s) => s.versionsOpen);
   const versions = useStore((s) => s.versions);
   const design = useStore((s) => s.design);

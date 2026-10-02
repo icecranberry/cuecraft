@@ -19,14 +19,14 @@ export function AssetsPage() {
   return (
     <div className="mx-auto max-w-5xl p-5">
       <div className="mb-4 flex items-center gap-3">
-        <h1 className="text-lg font-semibold text-ink-100">素材库</h1>
+        <h1 className="text-lg font-semibold text-ink-100">我的图片</h1>
         <div className="flex-1" />
         <div className="relative w-56">
           <Search size={14} className="absolute left-2.5 top-2.5 text-ink-500" />
           <TextInput value={q} onChange={(e) => setQ(e.target.value)} placeholder="搜索名称或标签" className="pl-8" />
         </div>
         <Button variant="primary" onClick={() => fileRef.current?.click()}>
-          <Upload size={14} /> 上传素材
+          <Upload size={14} /> 上传图片
         </Button>
         <input
           ref={fileRef}
@@ -43,11 +43,11 @@ export function AssetsPage() {
         />
       </div>
       <p className="mb-4 text-xs text-ink-500">
-        白底素材建议先「自动去白底」再放置；透明素材可直接使用。移除素材不删除仍被历史设计引用的文件（plan §9.3）。
+        上传喜欢的图案，用来设计球杆或作为 AI 参考。透明背景的图片可以直接上杆。
       </p>
       {!list.length ? (
         <div className="rounded-xl border border-dashed border-ink-700 p-14 text-center text-sm text-ink-500">
-          还没有素材，点击右上角上传，或到工作台用 AI 生成。
+          <p>把喜欢的图案收集在这里。</p><Button variant="outline" className="mt-5" onClick={() => fileRef.current?.click()}>上传第一张图片</Button>
         </div>
       ) : (
         <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
@@ -89,9 +89,9 @@ async function handleUpload(files: FileList) {
 function AssetCard({ asset }: { asset: Asset }) {
   return (
     <div className="group overflow-hidden rounded-lg border border-ink-700 bg-ink-850">
-      <div className="relative flex h-32 items-center justify-center bg-[repeating-conic-gradient(#3a3f47_0%_25%,#2b3037_0%_50%)] bg-[length:14px_14px]">
+      <div className="relative flex h-44 items-start justify-center bg-[repeating-conic-gradient(#f1f3ec_0%_25%,#e5eade_0%_50%)] bg-[length:14px_14px] pb-12">
         <AssetThumb blobKey={`blob:${asset.id}`} className="max-h-full max-w-full object-contain p-2" />
-        <div className="absolute inset-0 hidden items-center justify-center gap-2 bg-black/45 group-hover:flex">
+        <div className="absolute inset-x-0 bottom-0 flex items-center justify-center gap-2 bg-white/90 p-2">
           <Button
             size="sm"
             variant="primary"

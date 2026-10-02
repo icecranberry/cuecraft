@@ -1,0 +1,27 @@
+
+  VITE v5.4.21  ready in 418 ms
+
+  ➜  Local:   http://127.0.0.1:3311/
+  ➜  press h + enter to show help
+17:28:21 [vite] hmr update /src/three/Scene.tsx, /src/styles.css
+17:28:21 [vite] hmr invalidate /src/three/Scene.tsx Could not Fast Refresh ("BG_COLORS" export is incompatible). Learn more at https://github.com/vitejs/vite-plugin-react/tree/main/packages/plugin-react#consistent-components-exports
+17:28:21 [vite] hmr update /src/styles.css, /src/pages/StudioWorkbench.tsx
+17:28:22 [vite] hmr update /src/styles.css
+17:30:55 [vite] hmr update /src/pages/Settings.tsx, /src/styles.css
+17:31:58 [vite] hmr update /src/styles.css
+17:32:52 [vite] hmr update /src/pages/StudioWorkbench.tsx, /src/styles.css
+17:32:52 [vite] hmr update /src/styles.css, /src/pages/StudioWorkbench.tsx, /src/pages/GenerateDrawer.tsx
+17:32:53 [vite] hmr update /src/styles.css
+17:33:37 [vite] hmr update /src/pages/StudioWorkbench.tsx, /src/styles.css
+17:33:37 [vite] hmr update /src/pages/StudioWorkbench.tsx, /src/styles.css
+17:34:30 [vite] page reload src/tests/artwork.test.ts
+17:36:05 [vite] hmr update /src/styles.css
+17:36:36 [vite] hmr update /src/styles.css
+17:43:03 [vite] hmr update /src/pages/StudioWorkbench.tsx, /src/styles.css
+17:43:04 [vite] hmr update /src/pages/StudioWorkbench.tsx, /src/styles.css
+17:43:04 [vite] hmr update /src/pages/StudioWorkbench.tsx, /src/styles.css
+17:43:04 [vite] hmr update /src/pages/panels.tsx, /src/styles.css
+17:45:11 [vite] hmr update /src/styles.css
+17:45:54 [vite] hmr update /src/pages/StudioWorkbench.tsx, /src/styles.css
+17:45:55 [vite] hmr update /src/pages/StudioWorkbench.tsx, /src/styles.css
+17:46:55 [vite] hmr update /src/pages/StudioWorkbench.tsx, /src/styles.css

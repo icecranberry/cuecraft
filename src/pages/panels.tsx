@@ -31,8 +31,9 @@ const FINISH_OPTS: { value: FinishId; label: string }[] = FINISHES.map((f) => ({
 
 // —— 左侧统一抽屉 ——
 
-export function LeftDrawer({ tpl }: { tpl: CueTemplate }) {
-  const tab = useStore((s) => s.leftDrawerTab);
+export function LeftDrawer({ tpl, embedded = false }: { tpl: CueTemplate; embedded?: boolean }) {
+  const storedTab = useStore((s) => s.leftDrawerTab);
+  const tab = embedded && storedTab === 'parts' ? 'layers' : storedTab;
   const open = useStore((s) => s.leftDrawerOpen);
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -69,7 +70,7 @@ export function LeftDrawer({ tpl }: { tpl: CueTemplate }) {
 
   return (
     <div
-      className={`absolute left-3 top-3 bottom-16 z-20 flex w-64 flex-col overflow-hidden rounded-xl border border-ink-700 bg-ink-900/95 shadow-2xl backdrop-blur transition-all duration-200 ${
+      className={embedded ? 'embedded-library' : `absolute left-3 top-3 bottom-16 z-20 flex w-64 flex-col overflow-hidden rounded-xl border border-ink-700 bg-ink-900/95 shadow-2xl backdrop-blur transition-all duration-200 ${
         open ? 'translate-x-0 opacity-100' : '-translate-x-[110%] opacity-0 pointer-events-none'
       }`}
     >
@@ -80,7 +81,7 @@ export function LeftDrawer({ tpl }: { tpl: CueTemplate }) {
             { id: 'layers', label: '图层' },
             { id: 'assets', label: '素材' }
           ] as const
-        ).map((t) => (
+        ).filter((t) => !embedded || t.id !== 'parts').map((t) => (
           <button
             key={t.id}
             onClick={() => useStore.setState({ leftDrawerTab: t.id })}

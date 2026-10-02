@@ -1,20 +1,21 @@
 import { useEffect, useState } from 'react';
 import { initPersistence, useStore } from './state/store';
-import { Workbench } from './pages/Workbench';
+import { Workbench } from './pages/StudioWorkbench';
 import { AssetsPage } from './pages/Assets';
 import { TemplatesPage } from './pages/Templates';
 import { ProductsPage } from './pages/Products';
 import { SettingsPage } from './pages/Settings';
 import { CutoutEditor } from './editor/CutoutEditor';
+import { ArrowUpRight, CheckCircle2, ChevronDown, Image, PenTool, Settings, Shapes } from 'lucide-react';
 
 // 应用外壳：顶部导航 + 哈希路由 + 全局覆盖层（剪切编辑器、Toast）。
 
 const ROUTES = [
-  { hash: '#/workbench', label: '工作台' },
-  { hash: '#/assets', label: '素材库' },
-  { hash: '#/templates', label: '球杆模板' },
-  { hash: '#/products', label: '作品库' },
-  { hash: '#/settings', label: '设置' }
+  { hash: '#/workbench', label: '开始设计' },
+  { hash: '#/assets', label: '我的图片' },
+  { hash: '#/templates', label: '球杆规格' },
+  { hash: '#/products', label: '我的作品' },
+  { hash: '#/settings', label: '服务设置' }
 ];
 
 function currentRoute() {
@@ -38,6 +39,8 @@ export default function App() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const st = useStore.getState();
+      const target = e.target as HTMLElement | null;
+      if (target?.closest('input, textarea, select, [contenteditable="true"], [role="dialog"]') || st.cutout) return;
       if (e.key === 'Escape') {
         if (st.placementAssetId) st.setPlacementAsset(null);
       }
@@ -59,22 +62,33 @@ export default function App() {
   }
 
   return (
-    <div className="flex h-screen flex-col bg-ink-950 text-ink-100">
-      <header className="flex h-11 shrink-0 items-center gap-1 border-b border-ink-700 bg-ink-900 px-3">
-        <span className="mr-3 text-sm font-bold tracking-wide text-accent-500">球杆外观设计平台</span>
-        {ROUTES.map((r) => (
+    <div className="app-shell">
+      <a href="#main-content" className="skip-link" onClick={(e) => { e.preventDefault(); document.getElementById('main-content')?.focus(); }}>跳到主要内容</a>
+      <header className="app-header">
+        <a href="#/workbench" className="brand" aria-label="CUE STUDIO 球杆定制">
+          <span className="brand-mark"><span /><span /></span><span><strong>CUE STUDIO</strong><small>球杆定制工作室</small></span>
+        </a>
+        <nav aria-label="主导航" className="main-nav">
+        {ROUTES.filter((r) => !['#/templates', '#/settings'].includes(r.hash)).map((r) => (
           <a
             key={r.hash}
             href={r.hash}
-            className={`rounded-md px-3 py-1.5 text-sm transition-colors ${
-              route === r.hash ? 'bg-ink-750 text-ink-100' : 'text-ink-400 hover:text-ink-200'
-            }`}
+            aria-current={route === r.hash ? 'page' : undefined}
+            className={route === r.hash ? 'is-current' : ''}
           >
-            {r.label}
+            {r.hash === '#/workbench' ? <PenTool size={16} /> : r.hash === '#/assets' ? <Image size={16} /> : <Shapes size={16} />}{r.label}
           </a>
         ))}
+        </nav>
+        <details className="nav-more">
+          <summary>更多 <ChevronDown size={14} /></summary>
+          <div className="menu-popover">
+            <a href="#/templates" onClick={(e) => e.currentTarget.closest('details')?.removeAttribute('open')}><Shapes size={16} /> 球杆规格 <ArrowUpRight size={14} /></a>
+            <a href="#/settings" onClick={(e) => e.currentTarget.closest('details')?.removeAttribute('open')}><Settings size={16} /> 服务设置 <ArrowUpRight size={14} /></a>
+          </div>
+        </details>
       </header>
-      <main className="min-h-0 flex-1">
+      <main id="main-content" tabIndex={-1} className={`app-main ${route === '#/workbench' ? 'is-workbench' : 'is-library'}`}>
         {route === '#/workbench' && <Workbench />}
         {route === '#/assets' && <AssetsPage />}
         {route === '#/templates' && <TemplatesPage />}
@@ -83,8 +97,8 @@ export default function App() {
       </main>
       <CutoutEditor />
       {toast && (
-        <div className="pointer-events-none fixed bottom-6 left-1/2 z-[70] -translate-x-1/2 rounded-lg border border-ink-600 bg-ink-800 px-4 py-2 text-sm text-ink-100 shadow-2xl">
-          {toast}
+        <div role="status" aria-live="polite" className="app-toast">
+          <CheckCircle2 size={18} />{toast}
         </div>
       )}
     </div>

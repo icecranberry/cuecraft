@@ -41,8 +41,8 @@ export function sceneX(totalLen: number, a: number) {
 }
 
 export const BG_COLORS: Record<string, string> = {
-  neutral: '#9aa1ab',
-  bright: '#e6e8ec',
+  neutral: '#e8eae2',
+  bright: '#f3f3ed',
   dark: '#191c21'
 };
 
@@ -819,15 +819,15 @@ function CameraRig({ tpl }: { tpl: CueTemplate }) {
         dist = distFor(L, 0.94);
       }
     } else if (view === 'butt') {
-      // 后把特写：后把区域约占画面宽度 2/3（0.55 为透视经验系数）
+      // 保留两端余量，窄预览面板中也能完整看到后把。
       target = new THREE.Vector3(x((buttStart + L) / 2), 0, 0);
-      dist = distFor(L - buttStart, 0.66) * 0.55;
+      dist = distFor(L - buttStart, 0.80);
     } else if (view === 'shaft') {
       const shaft = segs.find((s) => s.id === 'shaft');
       const s0 = shaft ? shaft.a0 : 0;
       const s1 = shaft ? shaft.a1 : L * 0.5;
       target = new THREE.Vector3(x((s0 + s1) / 2), 0, 0);
-      dist = distFor(s1 - s0, 0.66) * 0.55;
+      dist = distFor(s1 - s0, 0.80);
     } else if (view === 'joint') {
       const jx = joint ? (joint.a0 + joint.a1) / 2 : L / 2;
       target = new THREE.Vector3(x(jx), 0, 0);

@@ -109,3 +109,17 @@ describe('部件聚焦距离', () => {
     }
   });
 });
+
+describe('新手质感切换', () => {
+  it('切换整体漆面保留底色和底材，并能一次撤销', () => {
+    const before = { ...empty, partOverrides: { 'butt-forearm': { matPreset: 'blackSolid', color: '#172a20', finish: 'matte' as const }, grip: { matPreset: 'leather' } } };
+    useStore.setState({ design: before, past: [], future: [], loaded: false });
+    useStore.getState().applyFinishAll('semi');
+    expect(useStore.getState().design.globalFinish).toBe('semi');
+    expect(useStore.getState().design.partOverrides['butt-forearm']).toEqual({ matPreset: 'blackSolid', color: '#172a20' });
+    expect(useStore.getState().design.partOverrides.grip).toEqual({ matPreset: 'leather' });
+    expect(useStore.getState().past).toHaveLength(1);
+    useStore.getState().undo();
+    expect(useStore.getState().design).toEqual(before);
+  });
+});

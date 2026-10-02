@@ -1,6 +1,6 @@
 import { clsx } from 'clsx';
 import type { ReactNode, ButtonHTMLAttributes, InputHTMLAttributes, SelectHTMLAttributes } from 'react';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 export function Button({
   children,
@@ -14,11 +14,12 @@ export function Button({
 }) {
   return (
     <button
+      type="button"
       className={clsx(
-        'inline-flex items-center justify-center gap-1.5 rounded-md font-medium transition-colors disabled:opacity-40 disabled:pointer-events-none select-none',
-        size === 'sm' && 'h-7 px-2 text-xs',
-        size === 'md' && 'h-9 px-3 text-sm',
-        size === 'icon' && 'h-8 w-8',
+        'inline-flex items-center justify-center gap-2 rounded-xl font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed select-none',
+        size === 'sm' && 'min-h-10 px-3 text-xs',
+        size === 'md' && 'min-h-11 px-4 text-sm',
+        size === 'icon' && 'h-11 w-11 shrink-0',
         variant === 'default' && 'bg-ink-700 text-ink-100 hover:bg-ink-600',
         variant === 'primary' && 'bg-accent-500 text-ink-950 hover:bg-accent-400',
         variant === 'ghost' && 'text-ink-300 hover:bg-ink-750 hover:text-ink-100',
@@ -64,7 +65,7 @@ export function NumberInput({ className, ...rest }: InputHTMLAttributes<HTMLInpu
     <input
       type="number"
       className={clsx(
-        'h-8 w-full rounded-md border border-ink-600 bg-ink-900 px-2 text-sm text-ink-100 outline-none focus:border-accent-500',
+        'h-11 w-full rounded-xl border border-ink-600 bg-ink-900 px-3 text-sm text-ink-100 focus:border-accent-500',
         className
       )}
       {...rest}
@@ -76,7 +77,7 @@ export function TextInput({ className, ...rest }: InputHTMLAttributes<HTMLInputE
   return (
     <input
       className={clsx(
-        'h-9 w-full rounded-md border border-ink-600 bg-ink-900 px-2.5 text-sm text-ink-100 outline-none placeholder:text-ink-500 focus:border-accent-500',
+        'h-11 w-full rounded-xl border border-ink-600 bg-ink-900 px-3 text-sm text-ink-100 placeholder:text-ink-500 focus:border-accent-500',
         className
       )}
       {...rest}
@@ -88,7 +89,7 @@ export function Select({ className, children, ...rest }: SelectHTMLAttributes<HT
   return (
     <select
       className={clsx(
-        'h-8 w-full rounded-md border border-ink-600 bg-ink-900 px-2 text-sm text-ink-100 outline-none focus:border-accent-500',
+        'h-11 w-full rounded-xl border border-ink-600 bg-ink-900 px-3 text-sm text-ink-100 focus:border-accent-500',
         className
       )}
       {...rest}
@@ -112,8 +113,10 @@ export function Toggle({ checked, onChange, label }: { checked: boolean; onChang
   return (
     <button
       type="button"
+      role="switch"
+      aria-checked={checked}
       onClick={() => onChange(!checked)}
-      className="flex w-full items-center justify-between rounded-md px-1 py-1.5 text-sm text-ink-200 hover:bg-ink-750"
+      className="flex min-h-11 w-full items-center justify-between gap-3 rounded-lg px-1 py-1.5 text-sm text-ink-200 hover:bg-ink-750"
     >
       <span>{label}</span>
       <span className={clsx('relative h-4 w-8 rounded-full transition-colors', checked ? 'bg-accent-500' : 'bg-ink-600')}>
@@ -135,9 +138,9 @@ export function Badge({ children, tone = 'default' }: { children: ReactNode; ton
       className={clsx(
         'inline-flex items-center rounded px-1.5 py-0.5 text-xxs font-medium',
         tone === 'default' && 'bg-ink-700 text-ink-300',
-        tone === 'warn' && 'bg-amber-900/60 text-amber-200',
-        tone === 'ok' && 'bg-emerald-900/60 text-emerald-200',
-        tone === 'err' && 'bg-red-900/60 text-red-200'
+        tone === 'warn' && 'bg-amber-100 text-amber-900',
+        tone === 'ok' && 'bg-emerald-100 text-emerald-900',
+        tone === 'err' && 'bg-red-100 text-red-900'
       )}
     >
       {children}
@@ -158,10 +161,30 @@ export function Dialog({
   children: ReactNode;
   wide?: boolean;
 }) {
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
+  useEffect(() => {
+    if (!open) return;
+    const previous = document.activeElement as HTMLElement | null;
+    const root = dialogRef.current;
+    root?.focus();
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') { event.stopPropagation(); closeRef.current(); }
+      if (event.key !== 'Tab' || !root) return;
+      const focusable = [...root.querySelectorAll<HTMLElement>('button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea, a[href], [tabindex="0"]')].filter((el) => el.getClientRects().length);
+      const first = focusable[0], last = focusable[focusable.length - 1];
+      if (!first) { event.preventDefault(); return; }
+      if (event.shiftKey && (document.activeElement === first || document.activeElement === root)) { event.preventDefault(); last.focus(); }
+      else if (!event.shiftKey && (document.activeElement === last || document.activeElement === root)) { event.preventDefault(); first.focus(); }
+    };
+    root?.addEventListener('keydown', onKey);
+    return () => { root?.removeEventListener('keydown', onKey); previous?.focus(); };
+  }, [open]);
   if (!open) return null;
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-6" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className={clsx('flex max-h-[92vh] w-full flex-col overflow-hidden rounded-xl border border-ink-700 bg-ink-900 shadow-2xl', wide ? 'max-w-4xl' : 'max-w-lg')}>
+      <div ref={dialogRef} role="dialog" aria-modal="true" aria-label={title} tabIndex={-1} className={clsx('flex max-h-[92vh] w-full flex-col overflow-hidden rounded-2xl border border-ink-700 bg-ink-900 shadow-2xl', wide ? 'max-w-4xl' : 'max-w-lg')}>
         <div className="flex items-center justify-between border-b border-ink-700 px-4 py-3">
           <div className="text-sm font-semibold text-ink-100">{title}</div>
           <Button variant="ghost" size="icon" onClick={onClose} aria-label="关闭">
@@ -188,9 +211,10 @@ export function Segmented<T extends string>({
       {options.map((o) => (
         <button
           key={o.value}
+          aria-pressed={value === o.value}
           onClick={() => onChange(o.value)}
           className={clsx(
-            'rounded px-2.5 py-1 text-xs transition-colors duration-150',
+            'min-h-10 rounded-lg px-3 py-2 text-sm transition-colors duration-150',
             value === o.value ? 'bg-ink-600 text-ink-100' : 'text-ink-400 hover:text-ink-200'
           )}
         >
@@ -220,6 +244,7 @@ export function Collapse({
     <div className="overflow-hidden rounded-lg border border-ink-700 bg-ink-850">
       <button
         onClick={() => setOpen(!open)}
+        aria-expanded={open}
         className="flex w-full items-center justify-between px-3 py-2.5 transition-colors hover:bg-ink-800"
       >
         <span className={clsx('text-xs font-semibold', accent ? 'text-accent-400' : 'text-ink-300')}>{title}</span>
@@ -239,7 +264,7 @@ export function Collapse({
       <div
         className={clsx(
           'grid transition-all duration-200 ease-out',
-          open ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'
+          open ? 'grid-rows-[1fr] opacity-100' : 'hidden'
         )}
       >
         <div className="min-h-0 overflow-hidden">

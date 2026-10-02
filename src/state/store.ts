@@ -218,7 +218,10 @@ export const useStore = create<Store>((set, get) => ({
   applyFinishAll(f) {
     get().pushHistory();
     set((s) => ({
-      design: { ...s.design, globalFinish: f, partOverrides: {} }
+      design: { ...s.design, globalFinish: f, partOverrides: Object.fromEntries(Object.entries(s.design.partOverrides).map(([id, override]) => {
+        const { finish: _finish, ...material } = override;
+        return [id, material];
+      })) }
     }));
   },
   setGlobalFinish(f) {

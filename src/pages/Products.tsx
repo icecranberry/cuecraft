@@ -10,13 +10,13 @@ export function ProductsPage() {
   const versions = useStore((s) => s.versions);
   return (
     <div className="mx-auto max-w-5xl p-5">
-      <h1 className="mb-1 text-lg font-semibold text-ink-100">作品库</h1>
+      <h1 className="mb-1 text-lg font-semibold text-ink-100">我的作品</h1>
       <p className="mb-4 text-xs text-ink-500">
-        作品关联确定的设计版本；继续编辑会载入该版本快照，不影响原版本（plan §9.3）。
+        每一个灵感，都值得留下。打开保存的作品，随时继续设计。
       </p>
       {!products.length ? (
         <div className="rounded-xl border border-dashed border-ink-700 p-14 text-center text-sm text-ink-500">
-          还没有作品。在工作台保存版本后选择「存为作品」。
+          <p>这里将收藏你的球杆设计。</p><a href="#/workbench" className="mt-5 inline-flex min-h-11 items-center rounded-xl bg-accent-500 px-5 text-white">开始我的第一个设计</a>
         </div>
       ) : (
         <div className="grid grid-cols-2 gap-4 md:grid-cols-3">

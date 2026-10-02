@@ -1,0 +1,251 @@
+import { clsx } from 'clsx';
+import type { ReactNode, ButtonHTMLAttributes, InputHTMLAttributes, SelectHTMLAttributes } from 'react';
+import { useState } from 'react';
+
+export function Button({
+  children,
+  variant = 'default',
+  size = 'md',
+  className,
+  ...rest
+}: ButtonHTMLAttributes<HTMLButtonElement> & {
+  variant?: 'default' | 'primary' | 'ghost' | 'danger' | 'outline';
+  size?: 'sm' | 'md' | 'icon';
+}) {
+  return (
+    <button
+      className={clsx(
+        'inline-flex items-center justify-center gap-1.5 rounded-md font-medium transition-colors disabled:opacity-40 disabled:pointer-events-none select-none',
+        size === 'sm' && 'h-7 px-2 text-xs',
+        size === 'md' && 'h-9 px-3 text-sm',
+        size === 'icon' && 'h-8 w-8',
+        variant === 'default' && 'bg-ink-700 text-ink-100 hover:bg-ink-600',
+        variant === 'primary' && 'bg-accent-500 text-ink-950 hover:bg-accent-400',
+        variant === 'ghost' && 'text-ink-300 hover:bg-ink-750 hover:text-ink-100',
+        variant === 'outline' && 'border border-ink-600 text-ink-200 hover:bg-ink-750',
+        variant === 'danger' && 'bg-red-900/70 text-red-100 hover:bg-red-800',
+        className
+      )}
+      {...rest}
+    >
+      {children}
+    </button>
+  );
+}
+
+export function Panel({ title, children, right, className }: { title?: string; children: ReactNode; right?: ReactNode; className?: string }) {
+  return (
+    <div className={clsx('rounded-lg border border-ink-700 bg-ink-850', className)}>
+      {title && (
+        <div className="flex items-center justify-between border-b border-ink-700 px-3 py-2">
+          <div className="text-xs font-semibold text-ink-300">{title}</div>
+          {right}
+        </div>
+      )}
+      <div className="p-3">{children}</div>
+    </div>
+  );
+}
+
+export function Field({ label, children, hint }: { label: string; children: ReactNode; hint?: string }) {
+  return (
+    <label className="block space-y-1">
+      <div className="flex items-baseline justify-between">
+        <span className="text-xxs text-ink-400">{label}</span>
+        {hint && <span className="text-xxs text-ink-500">{hint}</span>}
+      </div>
+      {children}
+    </label>
+  );
+}
+
+export function NumberInput({ className, ...rest }: InputHTMLAttributes<HTMLInputElement>) {
+  return (
+    <input
+      type="number"
+      className={clsx(
+        'h-8 w-full rounded-md border border-ink-600 bg-ink-900 px-2 text-sm text-ink-100 outline-none focus:border-accent-500',
+        className
+      )}
+      {...rest}
+    />
+  );
+}
+
+export function TextInput({ className, ...rest }: InputHTMLAttributes<HTMLInputElement>) {
+  return (
+    <input
+      className={clsx(
+        'h-9 w-full rounded-md border border-ink-600 bg-ink-900 px-2.5 text-sm text-ink-100 outline-none placeholder:text-ink-500 focus:border-accent-500',
+        className
+      )}
+      {...rest}
+    />
+  );
+}
+
+export function Select({ className, children, ...rest }: SelectHTMLAttributes<HTMLSelectElement>) {
+  return (
+    <select
+      className={clsx(
+        'h-8 w-full rounded-md border border-ink-600 bg-ink-900 px-2 text-sm text-ink-100 outline-none focus:border-accent-500',
+        className
+      )}
+      {...rest}
+    >
+      {children}
+    </select>
+  );
+}
+
+export function Slider({ className, ...rest }: InputHTMLAttributes<HTMLInputElement>) {
+  return (
+    <input
+      type="range"
+      className={clsx('h-1.5 w-full cursor-pointer appearance-none rounded bg-ink-600 accent-accent-500', className)}
+      {...rest}
+    />
+  );
+}
+
+export function Toggle({ checked, onChange, label }: { checked: boolean; onChange: (v: boolean) => void; label: string }) {
+  return (
+    <button
+      type="button"
+      onClick={() => onChange(!checked)}
+      className="flex w-full items-center justify-between rounded-md px-1 py-1.5 text-sm text-ink-200 hover:bg-ink-750"
+    >
+      <span>{label}</span>
+      <span className={clsx('relative h-4 w-8 rounded-full transition-colors', checked ? 'bg-accent-500' : 'bg-ink-600')}>
+        <span
+          className={clsx(
+            'absolute top-0.5 h-3 w-3 rounded-full bg-white transition-all',
+            checked ? 'left-4.5 translate-x-0' : 'left-0.5'
+          )}
+          style={{ left: checked ? 18 : 2 }}
+        />
+      </span>
+    </button>
+  );
+}
+
+export function Badge({ children, tone = 'default' }: { children: ReactNode; tone?: 'default' | 'warn' | 'ok' | 'err' }) {
+  return (
+    <span
+      className={clsx(
+        'inline-flex items-center rounded px-1.5 py-0.5 text-xxs font-medium',
+        tone === 'default' && 'bg-ink-700 text-ink-300',
+        tone === 'warn' && 'bg-amber-900/60 text-amber-200',
+        tone === 'ok' && 'bg-emerald-900/60 text-emerald-200',
+        tone === 'err' && 'bg-red-900/60 text-red-200'
+      )}
+    >
+      {children}
+    </span>
+  );
+}
+
+export function Dialog({
+  open,
+  onClose,
+  title,
+  children,
+  wide
+}: {
+  open: boolean;
+  onClose: () => void;
+  title: string;
+  children: ReactNode;
+  wide?: boolean;
+}) {
+  if (!open) return null;
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-6" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+      <div className={clsx('flex max-h-[92vh] w-full flex-col overflow-hidden rounded-xl border border-ink-700 bg-ink-900 shadow-2xl', wide ? 'max-w-4xl' : 'max-w-lg')}>
+        <div className="flex items-center justify-between border-b border-ink-700 px-4 py-3">
+          <div className="text-sm font-semibold text-ink-100">{title}</div>
+          <Button variant="ghost" size="icon" onClick={onClose} aria-label="关闭">
+            ✕
+          </Button>
+        </div>
+        <div className="min-h-0 flex-1 overflow-auto">{children}</div>
+      </div>
+    </div>
+  );
+}
+
+export function Segmented<T extends string>({
+  value,
+  options,
+  onChange
+}: {
+  value: T;
+  options: { value: T; label: string }[];
+  onChange: (v: T) => void;
+}) {
+  return (
+    <div className="inline-flex rounded-md border border-ink-600 bg-ink-900 p-0.5">
+      {options.map((o) => (
+        <button
+          key={o.value}
+          onClick={() => onChange(o.value)}
+          className={clsx(
+            'rounded px-2.5 py-1 text-xs transition-colors duration-150',
+            value === o.value ? 'bg-ink-600 text-ink-100' : 'text-ink-400 hover:text-ink-200'
+          )}
+        >
+          {o.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/** 可折叠分区（带高度过渡动画） */
+export function Collapse({
+  title,
+  children,
+  defaultOpen = true,
+  right,
+  accent
+}: {
+  title: string;
+  children: ReactNode;
+  defaultOpen?: boolean;
+  right?: ReactNode;
+  accent?: boolean;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div className="overflow-hidden rounded-lg border border-ink-700 bg-ink-850">
+      <button
+        onClick={() => setOpen(!open)}
+        className="flex w-full items-center justify-between px-3 py-2.5 transition-colors hover:bg-ink-800"
+      >
+        <span className={clsx('text-xs font-semibold', accent ? 'text-accent-400' : 'text-ink-300')}>{title}</span>
+        <span className="flex items-center gap-2">
+          {right}
+          <svg
+            viewBox="0 0 12 12"
+            className={clsx('h-3 w-3 text-ink-500 transition-transform duration-200', open && 'rotate-180')}
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.6"
+          >
+            <path d="M2.5 4.5 L6 8 L9.5 4.5" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </span>
+      </button>
+      <div
+        className={clsx(
+          'grid transition-all duration-200 ease-out',
+          open ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'
+        )}
+      >
+        <div className="min-h-0 overflow-hidden">
+          <div className="border-t border-ink-700 p-3">{children}</div>
+        </div>
+      </div>
+    </div>
+  );
+}

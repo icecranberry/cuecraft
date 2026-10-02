@@ -28,6 +28,8 @@ import {
 import { useStore, nextStickerId } from '../state/store';
 import { blobUrl } from '../state/imageStore';
 import { partFocusDistance } from './framing';
+import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib';
+import { bindCueAxisSnap } from './watchCamera';
 
 // 三维工作台（plan.md §3/§5.4）：单个实时渲染场景，部件拾取、贴纸拖放、视角控制。
 
@@ -335,6 +337,7 @@ async function placeSticker(hit: SurfaceHit, assetId: string, tpl: CueTemplate) 
   };
   st.addSticker(instance);
   await getStickerImage(instance);
+  if (useStore.getState().interactionMode === 'watch') return;
   st.select({ kind: 'sticker', id: instance.id });
   st.setPlacementAsset(null);
 }
@@ -662,7 +665,7 @@ function CueGroup({ tpl }: { tpl: CueTemplate }) {
   useEffect(() => {
     const onMove = (ev: PointerEvent) => {
       const drag = dragRef.current;
-      if (!drag) return;
+      if (!drag || useStore.getState().interactionMode === 'watch') return;
       const rect = gl.domElement.getBoundingClientRect();
       const ndc = new THREE.Vector2(
         ((ev.clientX - rect.left) / rect.width) * 2 - 1,
@@ -695,8 +698,9 @@ function CueGroup({ tpl }: { tpl: CueTemplate }) {
   }, [camera, gl, raycaster, controls, tpl]);
 
   const onPointerDown = (e: ThreeEvent<PointerEvent>) => {
-    e.stopPropagation();
     const st = useStore.getState();
+    if (st.interactionMode === 'watch') return;
+    e.stopPropagation();
     const hit = surfaceFromIntersection(e, tpl);
     if (!hit) return;
 
@@ -732,6 +736,7 @@ function CueGroup({ tpl }: { tpl: CueTemplate }) {
 
   const onPointerMove = (e: ThreeEvent<PointerEvent>) => {
     const st = useStore.getState();
+    if (st.interactionMode === 'watch') { ghostState.active = false; return; }
     const hit = surfaceFromIntersection(e, tpl);
     if (!hit) {
       ghostState.active = false;
@@ -754,6 +759,7 @@ function CueGroup({ tpl }: { tpl: CueTemplate }) {
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onDoubleClick={(e: ThreeEvent<MouseEvent>) => {
+        if (useStore.getState().interactionMode === 'watch') return;
         const hit = surfaceFromIntersection(e, tpl);
         if (hit) useStore.getState().focusPart(hit.surfaceId);
       }}
@@ -780,16 +786,36 @@ const VIEW_DIR = new THREE.Vector3(0.38, 0.34, 0.86).normalize();
 function CameraRig({ tpl }: { tpl: CueTemplate }) {
   const { camera, controls, size } = useThree() as unknown as {
     camera: THREE.PerspectiveCamera;
-    controls: { target: THREE.Vector3; update(): void } | null;
+    controls: OrbitControlsImpl | null;
     size: { width: number; height: number };
   };
+  const watching = useStore((s) => s.interactionMode === 'watch');
   const view = useStore((s) => s.view);
   const focusPartId = useStore((s) => s.focusPartId);
   const viewNonce = useStore((s) => s.viewNonce);
   const goal = useRef({ pos: new THREE.Vector3(), target: new THREE.Vector3() });
   const animating = useRef(false);
+  const userControlled = useRef(false);
 
   useEffect(() => {
+    const takeControl = () => { animating.current = false; userControlled.current = true; };
+    controls?.addEventListener('start', takeControl);
+    return () => controls?.removeEventListener('start', takeControl);
+  }, [controls]);
+
+  useEffect(() => {
+    userControlled.current = false;
+    camera.clearViewOffset();
+  }, [camera, watching, view, focusPartId, viewNonce, tpl]);
+
+  useEffect(() => {
+    if (!watching || !controls) return;
+    return bindCueAxisSnap(controls, tpl.lengthMm);
+  }, [watching, controls, tpl.lengthMm, view, focusPartId, viewNonce]);
+
+  // Preserve the manually chosen axial pivot until an explicit framing request.
+  useEffect(() => {
+    if ((watching || view === 'whole') && userControlled.current) return;
     const L = tpl.lengthMm;
     const x = (a: number) => sceneX(L, a);
     const aspect = Math.max(0.8, size.width / Math.max(1, size.height));
@@ -844,7 +870,7 @@ function CameraRig({ tpl }: { tpl: CueTemplate }) {
       target
     };
     animating.current = true;
-  }, [view, focusPartId, viewNonce, tpl, size.width, size.height]);
+  }, [watching, view, focusPartId, viewNonce, tpl, size.width, size.height]);
 
   useFrame(() => {
     if (!animating.current) return;
@@ -876,6 +902,8 @@ function FpsMeter() {
 
 export function CueScene({ tpl }: { tpl: CueTemplate }) {
   const bgMode = useStore((s) => s.bgMode);
+  const watching = useStore((s) => s.interactionMode === 'watch');
+  const wholeView = useStore((s) => s.view === 'whole' || s.interactionMode === 'watch');
   return (
     <Canvas
       shadows
@@ -892,6 +920,7 @@ export function CueScene({ tpl }: { tpl: CueTemplate }) {
       }}
       onPointerMissed={() => {
         const st = useStore.getState();
+        if (st.interactionMode === 'watch') return;
         if (!st.placementAssetId) st.select({ kind: 'global' });
         st.set({ hoverId: null });
       }}
@@ -913,18 +942,19 @@ export function CueScene({ tpl }: { tpl: CueTemplate }) {
         <Lightformer form="circle" intensity={0.5} position={[0, -260, 220]} scale={240} />
       </Environment>
       <CueGroup tpl={tpl} />
-      <GhostSticker />
-      <StickerOverlay tpl={tpl} />
+      {!watching && <GhostSticker />}
+      {!watching && <StickerOverlay tpl={tpl} />}
       <ContactShadows position={[0, -26, 0]} scale={1900} blur={2.8} opacity={0.32} far={120} />
       <OrbitControls
         makeDefault
         enableDamping
         dampingFactor={0.12}
-        enablePan={false}
-        minDistance={60}
-        maxDistance={2800}
-        minPolarAngle={0.25}
-        maxPolarAngle={Math.PI / 1.75}
+        enablePan={wholeView}
+        screenSpacePanning
+        minDistance={wholeView ? 0 : 60}
+        maxDistance={wholeView ? Infinity : 2800}
+        minPolarAngle={wholeView ? 0 : 0.25}
+        maxPolarAngle={wholeView ? Math.PI : Math.PI / 1.75}
       />
       <CameraRig tpl={tpl} />
       {import.meta.env.DEV && <FpsMeter />}

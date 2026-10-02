@@ -35,20 +35,22 @@ export function artworkParts(tpl: CueTemplate, design: DesignSnapshot): ArtworkP
   ];
 }
 
-export function createArtworkScope(tpl: CueTemplate, design: DesignSnapshot, mode: ArtworkScope['mode'], ids: string[]): ArtworkScope {
+export function createArtworkScope(tpl: CueTemplate, design: DesignSnapshot, mode: ArtworkScope['mode'], ids: string[], textureMode: ArtworkScope['textureMode'] = 'decal'): ArtworkScope {
   const available = artworkParts(tpl, design);
   const parts = available.filter((p) => ids.includes(p.id));
   if (mode === 'single' && parts.length !== 1) throw new Error('请选择一个可印刷部位');
   if (mode === 'linked' && parts.length < 2) throw new Error('联动生成至少选择两个部位');
-  return { mode, cueTemplateId: tpl.id, cueTemplateName: tpl.name, parts };
+  return { mode, textureMode, cueTemplateId: tpl.id, cueTemplateName: tpl.name, parts };
 }
 
 export function buildArtworkPrompt(scope: ArtworkScope, part?: ArtworkPart): string {
   const selection = scope.parts.map((p) => p.name).join('、');
+  const wrap = scope.textureMode === 'wrap';
   const shared = `球杆定制转印图案，杆型：${scope.cueTemplateName}。${scope.mode === 'linked' ? `联动部位：${selection}。所有部位统一主题、色板、线条粗细和主纹样，前臂与尾段呼应，装饰环重复同一边框元素；各部位根据用途重新构图，不把同一张图机械拉伸复制` : `仅设计${selection}，其他部位不修改`}。`;
-  if (!part) return `${shared}先绘制这套设计的风格母稿，明确主纹样及配套边框、辅助元素。只画平面图案，不画球杆实物，不画产品照片，不含品牌标识或部位标签。`;
+  if (!part) return `${shared}${wrap ? '整圈包覆模式：主纹样与辅助元素横向连续分布，形成绕杆一周的完整纹理，不是居中的单条细长贴花。' : '细长装饰模式：独立纵向贴花，周围露出底材。'}先绘制这套设计的风格母稿，明确主纹样及配套边框、辅助元素。只画平面图案，不画球杆实物，不画产品照片，不含品牌标识或部位标签。`;
   const ratio = (part.wMm / part.hMm).toFixed(3);
-  return `${shared}本张只输出「${part.name}」的平面图案。${part.role}。底材为${part.material}，请考虑图案在该底材上的对比度，但不要把底材纹理画入印刷图。实际展开宽 ${part.wMm.toFixed(1)} mm × 高 ${part.hMm.toFixed(1)} mm，主体宽高比约 ${ratio}，按此比例构图，用白色留白适配画布；纵向上方朝杆头、下方朝杆尾。${part.kind === 'face' ? '主体置于圆形安全区内。' : '横向为整周包覆方向，左右边缘衔接，图案不要超出部位。'}${scope.mode === 'linked' ? '使用参考母稿的相同主元素、色板与边框，保持整套设计一致。' : ''}只输出一个部位，不画球杆、透视、三维材质、标签、尺寸线或产品背景。`;
+  if (wrap && part.kind === 'lathe') return `${shared}整圈包覆模式。本张只输出「${part.name}」的完整矩形平面展开贴图。实际展开宽 ${part.wMm.toFixed(1)} mm × 高 ${part.hMm.toFixed(1)} mm，目标宽高比 ${ratio}。横向覆盖完整 360 度，纵向覆盖整个部位；左右边缘的颜色、线条与纹样必须无缝衔接，花纹分布到整个宽度，不要只在中央画一条细长装饰。整个输出画布就是贴图区域，满版延伸到四边，不加白色留白、外框或透明边距；若输出画布比例不同，请按目标展开比例预补偿构图，上杆时整张图会映射到上述尺寸。纵向上方朝杆头、下方朝杆尾。底材为${part.material}，可按用户配色设计完整底色与纹样。${scope.mode === 'linked' ? '使用参考母稿的相同主元素、色板与边框，保持整套设计一致。' : ''}只输出平面纹理，不画球杆实物、圆柱、透视、阴影、标签、尺寸线或水印。`;
+  return `${shared}本张只输出「${part.name}」的平面图案。${part.role}。底材为${part.material}，请考虑图案在该底材上的对比度，但不要把底材纹理画入印刷图。实际展开宽 ${part.wMm.toFixed(1)} mm × 高 ${part.hMm.toFixed(1)} mm，主体宽高比约 ${ratio}，按此比例构图，用白色留白适配画布；纵向上方朝杆头、下方朝杆尾。${part.kind === 'face' ? '主体置于圆形安全区内。' : '细长装饰模式：主体为独立贴花，居中构图，周围留白以露出原有底材，图案不要超出部位；装饰环可使用横向环绕的细线。'}${scope.mode === 'linked' ? '使用参考母稿的相同主元素、色板与边框，保持整套设计一致。' : ''}只输出一个部位，不画球杆、透视、三维材质、标签、尺寸线或产品背景。`;
 }
 
 /** 一次生成方案作为一次设计编辑；仅替换任务快照中指定的部位。 */
@@ -72,8 +74,9 @@ export function applyArtworkToDesign(
   const added: StickerInstance[] = replacements.map(({ part, asset }, i) => {
     // 保持像素比例，在展开区域内留出余量，避免将环线或插花压扁。
     const safe = part.kind === 'face' ? 0.66 : 0.96;
-    const w = Math.min(part.wMm * safe, part.hMm * safe * asset.w / asset.h);
-    const h = w * asset.h / asset.w;
+    const wrap = scope.textureMode === 'wrap' && part.kind === 'lathe';
+    const w = wrap ? part.wMm : Math.min(part.wMm * safe, part.hMm * safe * asset.w / asset.h);
+    const h = wrap ? part.hMm : w * asset.h / asset.w;
     const seg = tplSegments.find((s) => s.id === part.id);
     return {
       id: makeId(), name: asset.name, assetId: asset.id, processedRev: 0,

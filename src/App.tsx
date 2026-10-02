@@ -1,4 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { transitionUI } from './ui/motion';
+import { SlidingIndicator } from './ui/SlidingIndicator';
 import { initPersistence, useStore } from './state/store';
 import { Workbench } from './pages/StudioWorkbench';
 import { AssetsPage } from './pages/Assets';
@@ -25,12 +27,19 @@ function currentRoute() {
 
 export default function App() {
   const [route, setRoute] = useState(currentRoute());
+  const routeRef = useRef(route);
   const loaded = useStore((s) => s.loaded);
   const toast = useStore((s) => s.toast);
 
   useEffect(() => {
     void initPersistence();
-    const onHash = () => setRoute(currentRoute());
+    const onHash = () => {
+      const next = currentRoute(), previous = routeRef.current;
+      if (next === previous) return;
+      routeRef.current = next;
+      const order = ['#/workbench', '#/assets', '#/products', '#/templates', '#/settings'];
+      transitionUI(() => [document.getElementById('main-content')], order.indexOf(next) - order.indexOf(previous), () => setRoute(next));
+    };
     window.addEventListener('hashchange', onHash);
     if (!location.hash) location.hash = '#/workbench';
     return () => window.removeEventListener('hashchange', onHash);
@@ -39,8 +48,9 @@ export default function App() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const st = useStore.getState();
+      if (currentRoute() === '#/workbench' && st.interactionMode === 'watch') return;
       const target = e.target as HTMLElement | null;
-      if (target?.closest('input, textarea, select, [contenteditable="true"], [role="dialog"]') || st.cutout) return;
+      if (target?.closest('input, textarea, select, [role="combobox"], [role="listbox"], [contenteditable="true"], [role="dialog"]') || st.cutout) return;
       if (e.key === 'Escape') {
         if (st.placementAssetId) st.setPlacementAsset(null);
       }
@@ -69,6 +79,7 @@ export default function App() {
           <span className="brand-mark"><span /><span /></span><span><strong>CUE STUDIO</strong><small>球杆定制工作室</small></span>
         </a>
         <nav aria-label="主导航" className="main-nav">
+        <SlidingIndicator activeKey={route} selector="a[aria-current=page]" />
         {ROUTES.filter((r) => !['#/templates', '#/settings'].includes(r.hash)).map((r) => (
           <a
             key={r.hash}

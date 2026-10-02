@@ -17,6 +17,21 @@ const sticker = (id: string, partId: string, locked = false): StickerInstance =>
 });
 
 describe('工厂部位联动方案', () => {
+  it('整圈模式覆盖整个周长和长度，旧方案仍按原比例放置', () => {
+    const wrapScope = { ...scope, textureMode: 'wrap' as const };
+    const full = applyArtworkToDesign(empty, wrapScope, candidate, assets, { replace: true }, makeId);
+    full.stickers.forEach((s, i) => {
+      expect(s.w).toBe(scope.parts[i].wMm);
+      expect(s.h).toBe(scope.parts[i].hMm);
+    });
+    const legacy = applyArtworkToDesign(empty, { ...scope, textureMode: undefined }, candidate, assets, { replace: true }, makeId);
+    expect(legacy.stickers[0].w / legacy.stickers[0].h).toBeCloseTo(assets[0].w / assets[0].h);
+    expect(buildArtworkPrompt(wrapScope, scope.parts[0])).toContain('左右边缘');
+    expect(buildArtworkPrompt(wrapScope, scope.parts[0])).toContain('不加白色留白');
+    const faceScope = createArtworkScope(tpl, empty, 'single', ['face-butt'], 'wrap');
+    const face = applyArtworkToDesign(empty, faceScope, { id: 'face', partAssets: [{ partId: 'face-butt', assetId: assets[0].id }] }, assets, { replace: true }, makeId).stickers[0];
+    expect(Math.hypot(face.w, face.h)).toBeLessThan(faceScope.parts[0].wMm);
+  });
   it('只列可印刷部位，使用当前尺寸与材质覆盖创建快照', () => {
     const parts = artworkParts(tpl, { ...empty, partOverrides: { 'butt-forearm': { matPreset: 'blackSolid', color: '#000000' } } });
     expect(parts.some((p) => p.id === 'tip' || p.id === 'face-tip')).toBe(false);

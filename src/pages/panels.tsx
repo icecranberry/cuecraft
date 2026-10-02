@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import {
+  Check,
   Copy,
   Eye,
   EyeOff,
@@ -136,7 +137,7 @@ function PartsTab({ tpl }: { tpl: CueTemplate }) {
   );
 }
 
-function LayersTab({ onUpload }: { onUpload: () => void }) {
+export function LayersTab({ onUpload, onGenerate }: { onUpload: () => void; onGenerate?: () => void }) {
   const stickers = useStore((s) => s.design.stickers);
   const selection = useStore((s) => s.selection);
   const sorted = [...stickers].sort((a, b) => b.z - a.z);
@@ -149,7 +150,7 @@ function LayersTab({ onUpload }: { onUpload: () => void }) {
           <Button size="sm" variant="primary" onClick={onUpload}>
             <Upload size={13} /> 上传图案
           </Button>
-          <Button size="sm" variant="outline" onClick={() => useStore.getState().set({ generateOpen: true, generationRequest: null })}>
+          <Button size="sm" variant="outline" onClick={onGenerate ?? (() => useStore.getState().set({ generateOpen: true, generationRequest: null }))}>
             <Sparkles size={13} /> AI 生成
           </Button>
         </div>
@@ -169,6 +170,8 @@ function LayersTab({ onUpload }: { onUpload: () => void }) {
         >
           <button
             className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
+            aria-pressed={selection.kind === 'sticker' && selection.id === s.id}
+            title={s.name}
             onClick={() => useStore.getState().select({ kind: 'sticker', id: s.id })}
           >
             <span className={s.hidden ? 'text-ink-600' : 'text-ink-300'}>
@@ -177,7 +180,7 @@ function LayersTab({ onUpload }: { onUpload: () => void }) {
             <span className={`truncate ${s.hidden ? 'text-ink-500 line-through' : 'text-ink-200'}`}>{s.name}</span>
             {s.locked && <Lock size={11} className="text-ink-500" />}
           </button>
-          <div className="hidden gap-0.5 group-hover:flex">
+          <div className="flex gap-0.5">
             <IconBtn title="复制" onClick={() => useStore.getState().duplicateSticker(s.id)}>
               <Copy size={12} />
             </IconBtn>
@@ -256,7 +259,8 @@ export function AssetThumb({ blobKey, className }: { blobKey: string; className?
 
 // —— 右侧属性面板（只显示当前对象） ——
 
-export function RightPanel({ tpl }: { tpl: CueTemplate }) {
+export function RightPanel({ tpl, embedded = false }: { tpl: CueTemplate; embedded?: boolean }) {
+  const view = useStore((s) => s.view);
   const selection = useStore((s) => s.selection);
   const stickers = useStore((s) => s.design.stickers);
   if (selection.kind === 'sticker') {
@@ -264,6 +268,7 @@ export function RightPanel({ tpl }: { tpl: CueTemplate }) {
     if (st) return <StickerPanel sticker={st} tpl={tpl} />;
   }
   if (selection.kind === 'part' && selection.id) return <PartPanel partId={selection.id} tpl={tpl} />;
+  if (embedded && view !== 'whole') return <div className="inline-editor-empty"><strong>选择部位或图案，直接调整</strong><p>点击左侧部位可修改材质；选中图层可调整位置、大小和剪切。</p><Button variant="outline" size="sm" onClick={() => useStore.setState((s) => ({ selection: { kind: 'global' }, view: 'whole', focusPartId: null, viewNonce: s.viewNonce + 1 }))}>查看整杆 · 整体设计</Button></div>;
   return <GlobalPanel tpl={tpl} />;
 }
 
@@ -294,8 +299,21 @@ function GlobalPanel({ tpl }: { tpl: CueTemplate }) {
   const white = useStore((s) => s.showWhiteModel);
   return (
     <div className="flex h-full flex-col gap-3 overflow-auto p-3">
-      <ModeBanner mode="global" label="球杆设置" />
-      <Collapse title="规格" defaultOpen>
+      <ModeBanner mode="global" label="整体设计" />
+      <Collapse title="后把底色" defaultOpen>
+        <div className="base-options"><div>{[
+          { name: '原木', preset: 'maple', color: '#c4a77d' },
+          { name: '墨黑', preset: 'blackSolid', color: '#263329' },
+          { name: '暖白', preset: 'whiteSolid', color: '#f7f2e7' },
+          { name: '红木', preset: 'rosewood', color: '#794b3c' }
+        ].map((base) => <button key={base.preset} aria-label={`底色：${base.name}`} title={base.name} aria-pressed={design.partOverrides['butt-forearm']?.matPreset === base.preset} style={{ '--swatch': base.color } as React.CSSProperties} onClick={() => {
+          const st = useStore.getState(); st.pushHistory();
+          const overrides = { ...st.design.partOverrides };
+          for (const id of ['butt-forearm', 'butt-cap']) overrides[id] = { ...overrides[id], matPreset: base.preset, color: undefined };
+          st.setDesign({ partOverrides: overrides });
+        }}><span />{design.partOverrides['butt-forearm']?.matPreset === base.preset && <Check size={13} />}</button>)}</div></div>
+      </Collapse>
+      <Collapse title="规格" defaultOpen={false}>
         <div className="space-y-2 text-sm">
           <div className="flex items-center justify-between">
             <span className="text-ink-300">当前杆型</span>

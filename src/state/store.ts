@@ -74,6 +74,8 @@ interface Store {
   interactive: boolean;
   fps: number;
   /** 当前视角：整杆/前节/后把/接头/端面/部件聚焦 */
+  interactionMode: 'design' | 'watch';
+  setInteractionMode(mode: 'design' | 'watch'): void;
   view: 'whole' | 'shaft' | 'butt' | 'joint' | 'face' | 'focus';
   /** 聚焦视角的目标部件 */
   focusPartId: string | null;
@@ -170,6 +172,14 @@ export const useStore = create<Store>((set, get) => ({
   exportCheckData: null,
   interactive: false,
   fps: 0,
+  interactionMode: 'design',
+  setInteractionMode(mode) {
+    set((s) => ({
+      interactionMode: mode, view: mode === 'watch' ? 'whole' : 'butt',
+      selection: { kind: 'global' }, placementAssetId: null, hoverId: null,
+      focusPartId: null, viewNonce: s.viewNonce + 1, cutout: null, versionsOpen: false
+    }));
+  },
   view: 'butt',
   focusPartId: null,
   viewNonce: 0,

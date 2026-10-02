@@ -10,14 +10,16 @@ import { openCutoutForAsset } from '../editor/CutoutEditor';
 import { AssetThumb } from './panels';
 import { Button, Field, Select, TextInput, Toggle } from '../ui/components';
 import { CueMiniature } from '../ui/DesignIllustrations';
+import { transitionUI } from '../ui/motion';
+import { SlidingIndicator } from '../ui/SlidingIndicator';
 
 const STYLES = [
   { id: 'jade', name: '青绿贝母', note: '温润 · 经典', subject: '青绿色贝母长尖插花，前后呼应的菱形花纹和细银边', style: '经典台球杆镶嵌纹样，精致、对称', palette: '青绿、银白' },
   { id: 'gold', name: '经典黑金', note: '沉稳 · 精致', subject: '金色长线条与对称几何插花，尾段呼应主纹样', style: '简洁复古，细线镶嵌', palette: '金色、黑色' },
   { id: 'silver', name: '极简银线', note: '利落 · 现代', subject: '银白细长线条，少量菱形，保留大面积留白', style: '现代极简', palette: '银白、深灰' }
 ];
-type Draft = { step: number; mode: ArtworkScope['mode']; ids: string[]; subject: string; style: string; palette: string; keep: string; avoid: string; n: number; refs: string[]; removeWhite: boolean; replace: boolean; source: 'ai' | 'upload'; uploadId: string; jobId: string | null; styleId: string | null };
-const initialDraft: Draft = { step: 0, mode: 'linked', ids: ARTWORK_PRESETS[0].ids, subject: '', style: '', palette: '', keep: '', avoid: '', n: 1, refs: [], removeWhite: true, replace: true, source: 'ai', uploadId: '', jobId: null, styleId: null };
+type Draft = { textureMode: 'decal' | 'wrap'; step: number; mode: ArtworkScope['mode']; ids: string[]; subject: string; style: string; palette: string; keep: string; avoid: string; n: number; refs: string[]; removeWhite: boolean; replace: boolean; source: 'ai' | 'upload'; uploadId: string; jobId: string | null; styleId: string | null };
+const initialDraft: Draft = { textureMode: 'decal', step: 0, mode: 'linked', ids: ARTWORK_PRESETS[0].ids, subject: '', style: '', palette: '', keep: '', avoid: '', n: 1, refs: [], removeWhite: true, replace: true, source: 'ai', uploadId: '', jobId: null, styleId: null };
 function readDraft(): Draft {
   try { const value = JSON.parse(sessionStorage.getItem('cue:design-wizard:v1') || 'null'); return value && Array.isArray(value.ids) && Array.isArray(value.refs) ? { ...initialDraft, ...value, step: Math.max(0, Math.min(2, Number(value.step) || 0)) } : initialDraft; } catch { return initialDraft; }
 }
@@ -30,11 +32,22 @@ export function GenerateDrawer({ embedded = false }: { embedded?: boolean }) {
   const [draft, setDraft] = useState<Draft>(readDraft);
   const [busy, setBusy] = useState(false), [error, setError] = useState(''), [needSetup, setNeedSetup] = useState(false);
   const bodyRef = useRef<HTMLDivElement>(null), headingRef = useRef<HTMLHeadingElement>(null);
+  const footerRef = useRef<HTMLElement>(null);
+  const requestedStep = useRef(draft.step);
   const patch = (change: Partial<Draft>) => setDraft((previous) => ({ ...previous, ...change }));
-  const go = (step: number) => { patch({ step }); setError(''); bodyRef.current?.scrollTo({ top: 0 }); requestAnimationFrame(() => headingRef.current?.focus()); };
+  const go = (step: number) => {
+    const previous = requestedStep.current;
+    if (step === previous) return;
+    requestedStep.current = step;
+    transitionUI(() => [bodyRef.current, footerRef.current], step - previous, () => { patch({ step }); setError(''); }, () => {
+      bodyRef.current?.scrollTo({ top: 0, behavior: 'instant' });
+      headingRef.current?.focus({ preventScroll: true });
+    });
+  };
   useEffect(() => { try { sessionStorage.setItem('cue:design-wizard:v1', JSON.stringify(draft)); } catch { /* The current draft still works when storage is full. */ } }, [draft]);
   useEffect(() => {
     if (!request) return;
+    requestedStep.current = 0;
     const st = useStore.getState(), available = artworkParts(tpl, st.design);
     const id = available.some((p) => p.id === request.partId) ? request.partId! : 'butt-forearm';
     const sticker = [...st.design.stickers].reverse().find((s) => (s.target.kind === 'lathe' ? s.target.segId : s.target.faceId) === id);
@@ -60,14 +73,14 @@ export function GenerateDrawer({ embedded = false }: { embedded?: boolean }) {
     try { if (job.input.scope) applyScope(job.input.scope, candidate, onlyPartId); } catch (e) { setError((e as Error).message); }
   };
   const applyUpload = () => {
-    try { applyScope(createArtworkScope(tpl, design, draft.mode, draft.ids), uploadCandidate); go(2); } catch (e) { setError((e as Error).message); }
+    try { applyScope(createArtworkScope(tpl, design, draft.mode, draft.ids, draft.textureMode), uploadCandidate); go(2); } catch (e) { setError((e as Error).message); }
   };
   const generate = async () => {
     setError(''); setNeedSetup(false);
     if (!getApiKey()) { setNeedSetup(true); setError('先连接图片生成服务，就可以开始 AI 设计。你的想法已保留，也可以选择使用自己的图片。'); return; }
     setBusy(true);
     try {
-      const scope = createArtworkScope(tpl, design, draft.mode, draft.ids);
+      const scope = createArtworkScope(tpl, design, draft.mode, draft.ids, draft.textureMode);
       const refs = draft.refs.filter((id) => images.some((a) => a.id === id));
       const job = await startGeneration({ subject: draft.subject, style: draft.style, palette: draft.palette, keep: draft.keep, avoid: draft.avoid, n: draft.n, refAssetIds: refs, scope, removeWhite: draft.removeWhite }, refs.length ? 'edit' : 'generate');
       patch({ jobId: job.id }); go(2);
@@ -82,7 +95,7 @@ export function GenerateDrawer({ embedded = false }: { embedded?: boolean }) {
   const matchesPreset = (index: number) => draft.mode === 'linked' && draft.ids.length === ARTWORK_PRESETS[index].ids.length && ARTWORK_PRESETS[index].ids.every((id) => draft.ids.includes(id));
   return <section className={`design-wizard ${embedded ? '' : 'wizard-floating'}`}>
     <header className="wizard-heading"><div><span className="eyebrow">LET’S MAKE IT YOURS</span><h2>三步，做出你的风格</h2></div>{!embedded && <Button size="icon" variant="ghost" aria-label="关闭设计向导" onClick={() => useStore.getState().set({ generateOpen: false })}><X size={18} /></Button>}</header>
-    <nav className="wizard-steps" aria-label="设计步骤">{['选部位', '说想法', '看效果'].map((label, index) => <button key={label} aria-current={draft.step === index ? 'step' : undefined} disabled={index > 0 && !valid} onClick={() => go(index)}><span>{index < draft.step ? <Check size={13} /> : `0${index + 1}`}</span>{label}</button>)}</nav>
+    <nav className="wizard-steps" aria-label="设计步骤"><SlidingIndicator activeKey={draft.step} selector="button[aria-current=step]" underline />{['选部位', '说想法', '看效果'].map((label, index) => <button key={label} aria-current={draft.step === index ? 'step' : undefined} disabled={index > 0 && !valid} onClick={() => go(index)}><span>{index < draft.step ? <Check size={13} /> : `0${index + 1}`}</span>{label}</button>)}</nav>
     <div className="wizard-body" ref={bodyRef}>
       <div className="step-intro"><h3 tabIndex={-1} ref={headingRef}>{['想设计哪些地方？', '你喜欢什么样的风格？', '看看你的设计'][draft.step]}</h3><p>{['先选一个范围，图案会自动适配所选部位。', '选个风格作为起点，或直接写下自己的想法。', '满意的方案点一下就能上杆，再拖动球杆查看。'][draft.step]}</p></div>
       {draft.step === 0 && <>
@@ -96,6 +109,10 @@ export function GenerateDrawer({ embedded = false }: { embedded?: boolean }) {
         {!valid && <p className="form-error" role="alert">联动设计至少选择两个部位，或选择「只改一处」。</p>}
       </>}
       {draft.step === 1 && <>
+        <fieldset className="texture-mode-picker"><legend>图案怎么贴？</legend><div className="texture-mode-options">
+          <button type="button" aria-pressed={draft.textureMode === 'decal'} onClick={() => patch({ textureMode: 'decal' })}><span className="texture-swatch decal" aria-hidden="true" /><strong>细长装饰</strong><small>一条精致贴花，露出原有底材</small></button>
+          <button type="button" aria-pressed={draft.textureMode === 'wrap'} onClick={() => patch({ textureMode: 'wrap' })}><span className="texture-swatch wrap" aria-hidden="true" /><strong>整圈包覆</strong><small>图案绕满一周，转到背面也有花纹</small></button>
+        </div><p className="helper-text">{draft.textureMode === 'wrap' ? '所选杆身部位会铺满一周；端面仍按圆形适配。生成图保留底色与白色花纹。' : '图案等比例放置，适合长尖插花、细线和独立徽饰。'}</p></fieldset>
         <div className="source-switch"><button aria-pressed={draft.source === 'ai'} onClick={() => patch({ source: 'ai' })}><Sparkles size={15} />AI 帮我设计</button><button aria-pressed={draft.source === 'upload'} onClick={() => patch({ source: 'upload' })}><ImagePlus size={15} />用自己的图片</button></div>
         {draft.source === 'ai' ? <>
           <div className="style-options">{STYLES.map((style) => <button key={style.id} className={`style-card ${draft.styleId === style.id ? 'selected' : ''}`} aria-pressed={draft.styleId === style.id} onClick={() => patch({ styleId: style.id, subject: style.subject, style: style.style, palette: style.palette })}><div className={`style-art ${style.id}`}><CueMiniature tone={style.id} pattern /></div><strong>{style.name}</strong><small>{style.note}</small></button>)}</div>
@@ -106,12 +123,13 @@ export function GenerateDrawer({ embedded = false }: { embedded?: boolean }) {
         </> : <>
           <label className="upload-drop"><ImagePlus size={28} /><strong>{busy ? '正在读取…' : '选择你的图案'}</strong><span>支持 PNG、JPG 等图片，透明背景效果更好</span><input type="file" accept="image/*" disabled={busy} onChange={(e) => { const files = Array.from(e.target.files ?? []); e.target.value = ''; void upload(files, false); }} /></label>
           {uploaded && <div className="uploaded-selection"><AssetThumb blobKey={uploaded.blobKey} className="h-28 w-full object-contain" /><span>{uploaded.name}</span><Button variant="outline" onClick={() => openCutoutForAsset(uploaded)}><Scissors size={14} />剪切图片</Button></div>}
-          <p className="helper-text">图片会等比例放到选中的部位。上杆后可在「精细调整」中移动或缩放。</p>
+          <p className="helper-text">{draft.textureMode === 'wrap' ? '请使用左右边缘可衔接的展开图，整张图片会拉伸铺满所选部位。' : '图片会等比例放到选中的部位。'}上杆后可在「精细调整」中移动或缩放。</p>
         </>}
         {images.length > 0 && <details className="quiet-details"><summary>{draft.source === 'ai' ? '从我的图片中选参考图' : '从我的图片中选择'}</summary><div className="image-picker">{images.map((a) => <button key={a.id} title={a.name} aria-label={a.name} aria-pressed={draft.source === 'ai' ? draft.refs.includes(a.id) : draft.uploadId === a.id} onClick={() => patch(draft.source === 'ai' ? { refs: draft.refs.includes(a.id) ? draft.refs.filter((id) => id !== a.id) : [...draft.refs, a.id] } : { uploadId: a.id })}><AssetThumb blobKey={a.blobKey} className="h-full w-full object-contain" /></button>)}</div></details>}
-        <details className="quiet-details"><summary>更多选项 <span>可跳过</span></summary><div className="advanced-options">{draft.source === 'ai' && <><Field label="风格"><TextInput value={draft.style} onChange={(e) => patch({ style: e.target.value })} /></Field><Field label="配色"><TextInput value={draft.palette} onChange={(e) => patch({ palette: e.target.value })} /></Field><Field label="想保留什么"><TextInput value={draft.keep} onChange={(e) => patch({ keep: e.target.value })} /></Field><Field label="不想出现什么"><TextInput value={draft.avoid} onChange={(e) => patch({ avoid: e.target.value })} /></Field><Field label="生成几套方案"><Select aria-label="生成几套方案" value={draft.n} onChange={(e) => patch({ n: Number(e.target.value) })}>{[1, 2, 3, 4].map((n) => <option key={n} value={n}>{n} 套</option>)}</Select></Field><Toggle checked={draft.removeWhite} onChange={(value) => patch({ removeWhite: value })} label="自动去掉白色背景" /><p className="helper-text">白色主体较多时建议关闭。原始生成图会保留。</p></>}<Toggle checked={draft.replace} onChange={(value) => patch({ replace: value })} label="替换所选部位的原有图案" /><p className="helper-text">锁定图层会保留。关闭后，新图案会叠加在原图案上。</p></div></details>
+        <details className="quiet-details"><summary>更多选项 <span>可跳过</span></summary><div className="advanced-options">{draft.source === 'ai' && <><Field label="风格"><TextInput value={draft.style} onChange={(e) => patch({ style: e.target.value })} /></Field><Field label="配色"><TextInput value={draft.palette} onChange={(e) => patch({ palette: e.target.value })} /></Field><Field label="想保留什么"><TextInput value={draft.keep} onChange={(e) => patch({ keep: e.target.value })} /></Field><Field label="不想出现什么"><TextInput value={draft.avoid} onChange={(e) => patch({ avoid: e.target.value })} /></Field><Field label="生成几套方案"><Select aria-label="生成几套方案" value={draft.n} onChange={(e) => patch({ n: Number(e.target.value) })}>{[1, 2, 3, 4].map((n) => <option key={n} value={n}>{n} 套</option>)}</Select></Field>{draft.textureMode !== 'wrap' && <><Toggle checked={draft.removeWhite} onChange={(value) => patch({ removeWhite: value })} label="自动去掉白色背景" /><p className="helper-text">白色主体较多时建议关闭。原始生成图会保留。</p></>}</>}<Toggle checked={draft.replace} onChange={(value) => patch({ replace: value })} label="替换所选部位的原有图案" /><p className="helper-text">锁定图层会保留。关闭后，新图案会叠加在原图案上。</p></div></details>
       </>}
       {draft.step === 2 && <>
+        <p className="helper-text">贴图模式：{(draft.source === 'upload' ? draft.textureMode : currentJob?.input.scope?.textureMode) === 'wrap' ? '整圈包覆 · 绕满所选部位一周' : '细长装饰 · 等比例贴花'}</p>
         {applied && <div className="applied-banner"><CheckCircle2 size={20} /><div><strong>已经上杆，看看左侧效果</strong><p>可以撤销重选，满意后保存到我的作品。</p></div></div>}
         {draft.source === 'upload' && uploaded ? <div className="uploaded-selection"><AssetThumb blobKey={uploaded.blobKey} className="h-48 w-full object-contain" /><span>{uploaded.name}</span>{!applied && <Button variant="primary" onClick={applyUpload}>把图案放上球杆</Button>}</div> : draft.source === 'ai' && currentJob ? <>
           {running && <div className="generation-progress" role="status"><Loader2 size={30} className="animate-spin" /><strong>正在为你设计图案</strong><p>通常需要几分钟，可以先调整左侧底色。</p>{currentJob.progress && <><progress value={currentJob.progress.done} max={currentJob.progress.total} /><small>{currentJob.progress.done} / {currentJob.progress.total} 张已完成</small></>}<Button variant="ghost" onClick={() => cancelJob(currentJob.id)}>停止生成</Button></div>}
@@ -123,7 +141,7 @@ export function GenerateDrawer({ embedded = false }: { embedded?: boolean }) {
       </>}
       {error && <div className="form-error" role="alert"><p>{error}</p>{needSetup && <a href="#/settings">去连接服务 <ArrowRight size={14} /></a>}</div>}
     </div>
-    <footer className="wizard-footer">
+    <footer className="wizard-footer" ref={footerRef}>
       {draft.step === 0 && <><p>下一步：选择风格，写下你的想法</p><Button variant="primary" className="w-full" disabled={!valid} onClick={() => go(1)}>选好了，下一步<ArrowRight size={17} /></Button></>}
       {draft.step === 1 && <><p>{draft.source === 'ai' ? `生成 ${draft.n} 套 · 共 ${draft.n * (selected.length + (draft.mode === 'linked' ? 1 : 0))} 张图片，按所连接服务计费` : `图案将应用到 ${selected.length} 个部位，无需 AI 生成`}</p><div className="footer-actions"><Button variant="outline" aria-label="返回选择部位" onClick={() => go(0)}><ArrowLeft size={17} /></Button><Button variant="primary" className="flex-1" disabled={busy || !valid || (draft.source === 'ai' ? !draft.subject.trim() || running : !uploaded)} onClick={draft.source === 'ai' ? generate : applyUpload}>{busy ? <Loader2 size={17} className="animate-spin" /> : draft.source === 'ai' ? <Sparkles size={17} /> : <Check size={17} />}{busy ? '请稍候…' : draft.source === 'ai' ? '生成我的方案' : '把图案放上球杆'}</Button></div></>}
       {draft.step === 2 && <><p>{applied ? '满意了就保存，下次还可以继续编辑。' : running ? '生成过程中请保持此页面打开。' : '先把喜欢的方案放上球杆，再保存设计。'}</p><div className="footer-actions"><Button variant="outline" onClick={() => go(1)}><ArrowLeft size={15} />修改想法</Button>{applied && <Button variant="primary" className="flex-1" onClick={saveCurrentProduct}>保存到我的作品</Button>}</div></>}

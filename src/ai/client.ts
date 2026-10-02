@@ -1,4 +1,4 @@
-import type { ArtworkCandidate, Asset, GenerationJob, JobStatus } from '../core/types';
+import type { ArtworkCandidate, ArtworkPart, Asset, GenerationJob, JobStatus } from '../core/types';
 import { get as idbGet, set as idbSet } from 'idb-keyval';
 import { useStore } from '../state/store';
 import { loadImage, canvasToBlob, putBlob } from '../state/imageStore';
@@ -116,16 +116,16 @@ export async function testConnection(settings: AiSettings, apiKey = getApiKey())
   }
 }
 
-export function buildPrompt(input: GenerationJob['input']): string {
+export function buildPrompt(input: GenerationJob['input'], part?: ArtworkPart): string {
   const parts: string[] = [];
   if (input.subject) parts.push(`主题：${input.subject}`);
   if (input.style) parts.push(`风格：${input.style}`);
   if (input.palette) parts.push(`配色：${input.palette}`);
   if (input.keep) parts.push(`需要保留：${input.keep}`);
   if (input.avoid) parts.push(`避免出现：${input.avoid}`);
-  if (input.scope) parts.push(buildArtworkPrompt(input.scope, input.scope.mode === 'single' ? input.scope.parts[0] : undefined));
+  if (input.scope) parts.push(buildArtworkPrompt(input.scope, part ?? (input.scope.mode === 'single' ? input.scope.parts[0] : undefined)));
   // 白底生图固定要求（plan §6.2）
-  parts.push('纯白背景，主体完整居中，四周留白，无地面阴影，无产品展示背景，无文字水印。');
+  if (input.scope?.textureMode !== 'wrap' || (part ?? input.scope.parts[0])?.kind === 'face') parts.push('纯白背景，主体完整居中，四周留白，无地面阴影，无产品展示背景，无文字水印。');
   return parts.join('；');
 }
 
@@ -273,7 +273,8 @@ async function executeJob(job: GenerationJob, settings: AiSettings, apiKey = get
     let w = img.naturalWidth;
     let h = img.naturalHeight;
     let processingWarning: string | undefined;
-    if (partId && job.input.removeWhite) {
+    const removeWhite = partId && job.input.removeWhite && !(job.input.scope?.textureMode === 'wrap' && job.input.scope.parts.find((p) => p.id === partId)?.kind === 'lathe');
+    if (removeWhite) {
       const canvas = document.createElement('canvas');
       canvas.width = w; canvas.height = h;
       const ctx = canvas.getContext('2d')!;
@@ -306,7 +307,7 @@ async function executeJob(job: GenerationJob, settings: AiSettings, apiKey = get
       w, h, blobKey: `blob:${id}`, createdAt: Date.now(), aiPrompt: prompt, aiModel: settings.model,
       aiJobId: job.id, aiPartId: partId,
       processingWarning,
-      ...(partId && job.input.removeWhite ? { originalBlobKey: `original:${id}` } : {})
+      ...(removeWhite ? { originalBlobKey: `original:${id}` } : {})
     };
     await putBlob(asset.blobKey, savedBlob);
     st.addAsset(asset, savedBlob);
@@ -347,7 +348,7 @@ async function executeJob(job: GenerationJob, settings: AiSettings, apiKey = get
       }
       for (const part of scope.parts) {
         progress(`方案 ${i + 1} · ${part.name}`);
-        const prompt = `${buildPrompt({ ...job.input, scope: undefined })}；${buildArtworkPrompt(scope, part)}`;
+        const prompt = buildPrompt(job.input, part);
         const asset = await saveImage(await requestImage(prompt, sharedRefs), prompt, part.id);
         candidate.partAssets.push({ partId: part.id, assetId: asset.id });
         done++;

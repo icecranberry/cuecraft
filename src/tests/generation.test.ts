@@ -62,6 +62,22 @@ describe('服务设置保存', () => {
 });
 
 describe('联动生成请求链路', () => {
+  it('整圈模式发送满版提示词且不去白裁边，即使旧草稿保留去白开关', async () => {
+    const fetchMock = vi.fn(async () => successResponse());
+    vi.stubGlobal('fetch', fetchMock);
+    const request = input('linked');
+    request.scope!.textureMode = 'wrap';
+    request.removeWhite = true;
+    const result = await finished((await startGeneration(request, 'generate')).id);
+    expect(result.status).toBe('success');
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    for (const [, init] of fetchMock.mock.calls as unknown as [string, RequestInit][]) {
+      const prompt = init.body instanceof FormData ? String(init.body.get('prompt')) : JSON.parse(init.body as string).prompt;
+      expect(prompt).toContain('整圈包覆');
+      expect(prompt).not.toContain('四周留白');
+    }
+    expect(useStore.getState().assets.every((a) => !a.originalBlobKey && a.w === 64 && a.h === 256)).toBe(true);
+  });
   it('聊天 URL 保持原路径与查询参数，并发送 messages，解析聊天图片', async () => {
     const url = 'https://aikun.uk/v1/chat/completions?channel=image';
     db.set('settings:ai', { ...DEFAULT_AI_SETTINGS, baseUrl: url, model: 'gpt-image-2' });

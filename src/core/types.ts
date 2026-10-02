@@ -126,6 +126,8 @@ export interface ArtworkPart {
 
 export interface ArtworkScope {
   mode: 'linked' | 'single';
+  /** Missing on older jobs: preserve their original proportional placement. */
+  textureMode?: 'decal' | 'wrap';
   cueTemplateId: string;
   cueTemplateName: string;
   parts: ArtworkPart[];

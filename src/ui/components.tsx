@@ -1,6 +1,8 @@
 import { clsx } from 'clsx';
-import type { ReactNode, ButtonHTMLAttributes, InputHTMLAttributes, SelectHTMLAttributes } from 'react';
-import { useEffect, useRef, useState } from 'react';
+import type { ReactNode, ButtonHTMLAttributes, InputHTMLAttributes, ReactElement, OptionHTMLAttributes } from 'react';
+import { Children, isValidElement, useEffect, useRef, useState } from 'react';
+import * as SelectPrimitive from '@radix-ui/react-select';
+import { Check, ChevronDown, ChevronUp } from 'lucide-react';
 
 export function Button({
   children,
@@ -85,17 +87,44 @@ export function TextInput({ className, ...rest }: InputHTMLAttributes<HTMLInputE
   );
 }
 
-export function Select({ className, children, ...rest }: SelectHTMLAttributes<HTMLSelectElement>) {
+type SelectProps = Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'value' | 'defaultValue' | 'onChange'> & {
+  value?: string | number;
+  defaultValue?: string | number;
+  required?: boolean;
+  onChange?: (event: { target: { value: string } }) => void;
+};
+
+/** Shared single-select; keeps option markup and value callbacks consistent across pages. */
+export function Select({ className, children, value, defaultValue, onChange, disabled, name, required, ...rest }: SelectProps) {
+  const options = Children.toArray(children).filter((child): child is ReactElement<OptionHTMLAttributes<HTMLOptionElement>> => isValidElement(child) && child.type === 'option');
+  const [localValue, setLocalValue] = useState(String(defaultValue ?? options[0]?.props.value ?? ''));
+  const selected = String(value ?? localValue);
+  // Prefix values so the valid empty-string choice ("follow overall") remains selectable.
+  const encode = (v: string | number | readonly string[] | undefined) => `option:${String(v ?? '')}`;
   return (
-    <select
-      className={clsx(
-        'h-11 w-full rounded-xl border border-ink-600 bg-ink-900 px-3 text-sm text-ink-100 focus:border-accent-500',
-        className
-      )}
-      {...rest}
-    >
-      {children}
-    </select>
+    <SelectPrimitive.Root value={encode(selected)} disabled={disabled} required={required} onValueChange={(next) => {
+      const nextValue = next.slice('option:'.length);
+      setLocalValue(nextValue);
+      onChange?.({ target: { value: nextValue } });
+    }}>
+      {name && <input type="hidden" name={name} value={selected} disabled={disabled} />}
+      <SelectPrimitive.Trigger {...rest} className={clsx('ui-select-trigger', className)}>
+        <SelectPrimitive.Value />
+        <SelectPrimitive.Icon className="ui-select-chevron"><ChevronDown size={15} /></SelectPrimitive.Icon>
+      </SelectPrimitive.Trigger>
+      <SelectPrimitive.Portal>
+        <SelectPrimitive.Content className="ui-select-content" position="popper" sideOffset={6} collisionPadding={10}>
+          <SelectPrimitive.ScrollUpButton className="ui-select-scroll"><ChevronUp size={14} /></SelectPrimitive.ScrollUpButton>
+          <SelectPrimitive.Viewport className="ui-select-viewport">
+            {options.map((option) => <SelectPrimitive.Item key={encode(option.props.value)} value={encode(option.props.value)} disabled={option.props.disabled} className="ui-select-item">
+              <SelectPrimitive.ItemText>{option.props.children}</SelectPrimitive.ItemText>
+              <SelectPrimitive.ItemIndicator className="ui-select-check"><Check size={15} strokeWidth={2} /></SelectPrimitive.ItemIndicator>
+            </SelectPrimitive.Item>)}
+          </SelectPrimitive.Viewport>
+          <SelectPrimitive.ScrollDownButton className="ui-select-scroll"><ChevronDown size={14} /></SelectPrimitive.ScrollDownButton>
+        </SelectPrimitive.Content>
+      </SelectPrimitive.Portal>
+    </SelectPrimitive.Root>
   );
 }
 

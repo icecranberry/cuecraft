@@ -30,12 +30,10 @@ import { blobUrl } from '../state/imageStore';
 import { partFocusDistance } from './framing';
 import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib';
 import { bindCueAxisSnap } from './watchCamera';
+import { previewPrintResolution } from '../stickers/previewResolution';
 
 // 三维工作台（plan.md §3/§5.4）：单个实时渲染场景，部件拾取、贴纸拖放、视角控制。
 
-const QUALITY_PPM: Record<string, number> = { fast: 1.1, balanced: 2.0, sharp: 3.2 };
-const DRAG_PPM = 0.9;
-const DRAG_MAXDIM = 1024;
 const DEFAULT_STICKER_W = 22;
 
 export function sceneX(totalLen: number, a: number) {
@@ -225,7 +223,7 @@ function StickerOverlay({ tpl }: { tpl: CueTemplate }) {
       <group ref={groupRef}>
         <Html center zIndexRange={[18, 12]} position={[0, 0, 0]} style={{ pointerEvents: 'none' }}>
           <div
-            className="flex items-center gap-0.5 rounded-lg border border-ink-600 bg-ink-950/92 p-1 shadow-2xl"
+            className="sticker-toolbar"
             style={{ transform: 'translate(-50%, -140%)', pointerEvents: 'auto' }}
             onPointerDown={(e) => e.stopPropagation()}
           >
@@ -251,9 +249,7 @@ function OvBtn({ label, title, onClick, danger }: { label: string; title: string
         e.stopPropagation();
         onClick();
       }}
-      className={`whitespace-nowrap rounded px-2 py-1 text-xxs font-medium transition-colors duration-150 ${
-        danger ? 'text-red-300 hover:bg-red-900/60' : 'text-ink-200 hover:bg-ink-700'
-      }`}
+      className={`sticker-toolbar-button${danger ? ' is-danger' : ''}`}
     >
       {label}
     </button>
@@ -433,6 +429,7 @@ function CuePart({
   totalLen: number;
   tpl: CueTemplate;
 }) {
+  const gl = useThree((s) => s.gl);
   const geom = useMemo(() => {
     const g = buildSegmentGeometry(seg);
     g.translate(-totalLen / 2, 0, 0);
@@ -471,31 +468,34 @@ function CuePart({
   }, [presetId, finishId, override?.color, seg.r0, seg.r1, seg.a0, seg.a1, whiteModel]);
 
   // 印刷层合成（plan §4.3：拖动时轻量，停止后清晰）
-  const ppm = interactive ? DRAG_PPM : QUALITY_PPM[quality] ?? 2.0;
-  const maxDim = interactive ? DRAG_MAXDIM : 4096;
   useEffect(() => {
     if (!handle) return;
     let dead = false;
     let tex: THREE.CanvasTexture | null = null;
     (async () => {
-      for (const s of useStore.getState().design.stickers) await getStickerImage(s);
+      const stickers = design.stickers.filter((s) => !s.hidden && s.target.kind === 'lathe' && s.target.segId === seg.id);
+      await Promise.all(stickers.map(getStickerImage));
       if (dead) return;
       let canvas: HTMLCanvasElement | null = null;
       if (exportCheckMode && exportCheckData) {
         canvas = checkCanvasFor(seg, exportCheckData);
-      } else if (seg.printEnabled) {
-        canvas = composeSegmentPrint(seg, useStore.getState().design.stickers, ppm, maxDim).canvas;
+      } else if (seg.printEnabled && stickers.length) {
+        const { ppm, maxDim } = previewPrintResolution(
+          Math.PI * (seg.r0 + seg.r1), seg.a1 - seg.a0, stickers,
+          getCachedStickerImage, quality, interactive, gl.capabilities.maxTextureSize,
+        );
+        canvas = composeSegmentPrint(seg, stickers, ppm, maxDim).canvas;
       }
-      if (!canvas) canvas = document.createElement('canvas');
+      if (!canvas) { handle.setPrintMap(null); return; }
       if (dead) return;
-      tex = canvasToTexture(canvas);
+      tex = canvasToTexture(canvas, gl.capabilities.getMaxAnisotropy());
       handle.setPrintMap(tex);
     })();
     return () => {
       dead = true;
       tex?.dispose();
     };
-  }, [handle, design.stickers, ppm, maxDim, seg, exportCheckMode, exportCheckData]);
+  }, [handle, design.stickers, quality, interactive, gl, seg, exportCheckMode, exportCheckData]);
 
   const selection = useStore((s) => s.selection);
   const hoverId = useStore((s) => s.hoverId);
@@ -535,6 +535,7 @@ function CueFace({
   totalLen: number;
   tpl: CueTemplate;
 }) {
+  const gl = useThree((s) => s.gl);
   const geom = useMemo(() => {
     const g = buildFaceGeometry(face);
     g.translate(-totalLen / 2, 0, 0);
@@ -568,27 +569,27 @@ function CueFace({
     let dead = false;
     let tex: THREE.CanvasTexture | null = null;
     (async () => {
-      for (const s of useStore.getState().design.stickers) await getStickerImage(s);
+      const stickers = design.stickers.filter((s) => !s.hidden && s.target.kind === 'face' && s.target.faceId === face.id);
+      await Promise.all(stickers.map(getStickerImage));
       if (dead) return;
       let canvas: HTMLCanvasElement | null = null;
-      if (face.printEnabled) {
-        canvas = composeFacePrint(
-          face,
-          useStore.getState().design.stickers,
-          interactive ? DRAG_PPM : QUALITY_PPM[quality] ?? 2,
-          interactive ? DRAG_MAXDIM : 2048
-        ).canvas;
+      if (face.printEnabled && stickers.length) {
+        const { ppm, maxDim } = previewPrintResolution(
+          face.radius * 2, face.radius * 2, stickers,
+          getCachedStickerImage, quality, interactive, gl.capabilities.maxTextureSize,
+        );
+        canvas = composeFacePrint(face, stickers, ppm, maxDim).canvas;
       }
-      if (!canvas) canvas = document.createElement('canvas');
+      if (!canvas) { handle.setPrintMap(null); return; }
       if (dead) return;
-      tex = canvasToTexture(canvas);
+      tex = canvasToTexture(canvas, gl.capabilities.getMaxAnisotropy());
       handle.setPrintMap(tex);
     })();
     return () => {
       dead = true;
       tex?.dispose();
     };
-  }, [handle, design.stickers, interactive, quality, face]);
+  }, [handle, design.stickers, interactive, quality, gl, face]);
 
   const selection = useStore((s) => s.selection);
   const hoverId = useStore((s) => s.hoverId);

@@ -74,6 +74,8 @@ export function drawStickerMM(
   ctx.rotate((s.rotDeg * Math.PI) / 180);
   ctx.scale(s.flipX ? -1 : 1, s.flipY ? -1 : 1);
   ctx.globalAlpha = s.opacity;
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
   ctx.drawImage(img.canvas, -pw / 2, -ph / 2, pw, ph);
   ctx.restore();
 }
@@ -150,11 +152,13 @@ export function composeFacePrint(
 }
 
 /** 预览用 CanvasTexture（flipY=false：画布顶行 = 杆头侧，与导出一致） */
-export function canvasToTexture(canvas: HTMLCanvasElement): THREE.CanvasTexture {
+export function canvasToTexture(canvas: HTMLCanvasElement, maxAnisotropy = 8): THREE.CanvasTexture {
   const tex = new THREE.CanvasTexture(canvas);
   tex.flipY = false;
   tex.colorSpace = THREE.SRGBColorSpace;
-  tex.anisotropy = 8;
+  tex.anisotropy = Math.max(1, Math.min(16, maxAnisotropy));
+  tex.magFilter = THREE.LinearFilter;
+  tex.minFilter = THREE.LinearMipmapLinearFilter;
   tex.wrapS = THREE.RepeatWrapping;
   tex.needsUpdate = true;
   return tex;

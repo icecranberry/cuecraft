@@ -1,10 +1,12 @@
 import { get, set, del } from 'idb-keyval';
+import { builtinPatternUrl } from '../materials/patterns';
 
 // 图像 blob 注册表：原图、处理图、封面等统一存 IndexedDB，内存中缓存 ObjectURL。
 // 原始素材保持可恢复（plan.md §6.3），设计数据不内嵌大图二进制（plan.md §9.3）。
 
 const urlCache = new Map<string, string>();
 const blobCache = new Map<string, Blob>();
+const pendingBuiltins = new Map<string, Promise<Blob>>();
 
 export async function putBlob(key: string, blob: Blob): Promise<void> {
   const oldUrl = urlCache.get(key);
@@ -17,6 +19,20 @@ export async function putBlob(key: string, blob: Blob): Promise<void> {
 export async function getBlob(key: string): Promise<Blob | undefined> {
   const hit = blobCache.get(key);
   if (hit) return hit;
+  const bundledUrl = builtinPatternUrl(key);
+  if (bundledUrl) {
+    let request = pendingBuiltins.get(key);
+    if (!request) {
+      request = fetch(bundledUrl).then(async (response) => {
+        if (!response.ok || !response.headers.get('content-type')?.startsWith('image/')) throw new Error('内置纹样未能加载，请刷新重试');
+        const blob = await response.blob();
+        blobCache.set(key, blob);
+        return blob;
+      }).finally(() => pendingBuiltins.delete(key));
+      pendingBuiltins.set(key, request);
+    }
+    return request;
+  }
   const b = await get<Blob>(key);
   if (b) blobCache.set(key, b);
   return b;

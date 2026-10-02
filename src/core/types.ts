@@ -96,7 +96,10 @@ export interface DesignSnapshot {
 export interface Asset {
   id: string;
   name: string;
-  source: 'upload' | 'ai';
+  source: 'upload' | 'ai' | 'builtin';
+  kind?: 'pattern' | 'sticker';
+  category?: string;
+  description?: string;
   tags: string[];
   w: number;
   h: number;

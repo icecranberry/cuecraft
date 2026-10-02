@@ -14,7 +14,7 @@ import { ArrowUpRight, CheckCircle2, ChevronDown, Image, PenTool, Settings, Shap
 
 const ROUTES = [
   { hash: '#/workbench', label: '开始设计' },
-  { hash: '#/assets', label: '我的图片' },
+  { hash: '#/assets', label: '纹样素材' },
   { hash: '#/templates', label: '球杆规格' },
   { hash: '#/products', label: '我的作品' },
   { hash: '#/settings', label: '服务设置' }

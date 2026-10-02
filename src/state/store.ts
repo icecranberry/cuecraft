@@ -14,6 +14,7 @@ import type {
 import { get as idbGet, set as idbSet } from 'idb-keyval';
 import { putBlob, removeBlob } from './imageStore';
 import { resolveTemplate } from '../cue/templates';
+import { mergeBuiltinPatterns } from '../materials/patterns';
 
 // 应用状态（plan.md §3/§9）：设计数据、选择、历史、UI 与库数据。
 // 自动保存当前工作状态；显式保存不可变设计版本（plan.md §9.3）。
@@ -362,6 +363,7 @@ export const useStore = create<Store>((set, get) => ({
     set((s) => ({ assets: [a, ...s.assets] }));
   },
   removeAsset(id) {
+    if (get().assets.find((a) => a.id === id)?.source === 'builtin') return;
     // 从列表移除；仍被设计引用的 blob 保留（plan.md §9.3）
     set((s) => ({ assets: s.assets.map((a) => (a.id === id ? { ...a, removed: true } : a)) }));
   },
@@ -448,7 +450,7 @@ export async function initPersistence() {
   }
   useStore.setState({
     design,
-    assets,
+    assets: mergeBuiltinPatterns(assets),
     jobs,
     versions,
     products,

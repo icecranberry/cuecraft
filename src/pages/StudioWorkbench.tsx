@@ -88,11 +88,11 @@ export function Workbench() {
     </div>
     <ExportDialog tpl={tpl} /><UnfoldCheckDialog tpl={tpl} /><VersionsDialog tpl={tpl} />
     <Dialog open={help} onClose={() => setHelp(false)} title="第一次设计？从这三步开始">
-      <div className="help-content"><ol><li><strong>选部位</strong><p>选择「前后呼应」，AI 会搭配好前臂和尾段。想改某一处，选「只改一处」。</p></li><li><strong>说想法</strong><p>点一个喜欢的风格，再用一句话描述。也可以上传图片作为参考，或直接使用自己的图案。</p></li><li><strong>看效果</strong><p>生成后点「用这套」，图案就会上杆。满意后保存设计，随时能在「我的作品」里继续编辑。</p></li></ol><p>改错了？预览区的「撤销」能回退。图层在右侧「图层」页签管理，尺寸和剪切工具在预览下方。设计模式下点击左侧「查看整杆」可调整整体底色和漆面；切换「观看」可自由查看，避免误编辑。</p><Button variant="primary" className="w-full" onClick={() => setHelp(false)}>明白了，开始设计</Button></div>
+      <div className="help-content"><ol><li><strong>选部位</strong><p>选择「前后呼应」，把纹样应用到前臂和尾段。想改某一处，选「只改一处」。</p></li><li><strong>选纹样</strong><p>在「纹样选料」中搜索和选择系统内置图案，直接放上球杆。也可以切换到 AI 设计，或上传自己的图片。</p></li><li><strong>看效果</strong><p>生成后点「用这套」，图案就会上杆。满意后保存设计，随时能在「我的作品」里继续编辑。</p></li></ol><p>改错了？预览区的「撤销」能回退。图层在右侧「图层」页签管理，尺寸和剪切工具在预览下方。设计模式下点击左侧「查看整杆」可调整整体底色和漆面；切换「观看」可自由查看，避免误编辑。</p><Button variant="primary" className="w-full" onClick={() => setHelp(false)}>明白了，开始设计</Button></div>
     </Dialog>
     <input id="global-upload" type="file" accept="image/*" multiple hidden onChange={async (e) => {
       const files = Array.from(e.target.files ?? []); e.target.value = ''; if (!files.length) return;
-      try { await uploadDesignImages(files); useStore.getState().showToast('图片已上传，可在「我的图片」中使用'); } catch { useStore.getState().showToast('图片未能读取，请换一张图片重试'); }
+      try { await uploadDesignImages(files); useStore.getState().showToast('图片已上传，可在「纹样素材」中使用'); } catch { useStore.getState().showToast('图片未能读取，请换一张图片重试'); }
     }} />
   </div>;
 }

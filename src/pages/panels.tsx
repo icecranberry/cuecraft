@@ -24,6 +24,7 @@ import { effectivePpi } from '../editor/cutout';
 import { openCutoutForSticker } from '../editor/CutoutEditor';
 import { useStore, nextStickerId, activeAssets } from '../state/store';
 import { blobUrl } from '../state/imageStore';
+import { builtinPatternUrl } from '../materials/patterns';
 import { Badge, Button, Collapse, Field, NumberInput, Segmented, Select, Slider, TextInput, Toggle } from '../ui/components';
 
 // 工作台侧栏：左侧统一抽屉（部件／图层／素材），右侧只显示当前对象属性。
@@ -249,12 +250,15 @@ export function AssetThumb({ blobKey, className }: { blobKey: string; className?
   const revision = useStore((s) => s.assets.find((a) => a.blobKey === blobKey)?.revision ?? 0);
   useEffect(() => {
     let dead = false;
-    blobUrl(blobKey).then((u) => !dead && setUrl(u ?? null));
+    const bundled = builtinPatternUrl(blobKey);
+    if (bundled) { setUrl(bundled); return; }
+    setUrl(null);
+    blobUrl(blobKey).then((u) => !dead && setUrl(u ?? null)).catch(() => !dead && setUrl(null));
     return () => {
       dead = true;
     };
   }, [blobKey, revision]);
-  return url ? <img src={url} className={className} alt="" /> : <div className={className} />;
+  return url ? <img src={url} className={className} alt="" loading="lazy" decoding="async" /> : <div className={className} />;
 }
 
 // —— 右侧属性面板（只显示当前对象） ——

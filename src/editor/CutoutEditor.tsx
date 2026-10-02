@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Asset, StickerInstance } from '../core/types';
-import { useStore } from '../state/store';
-import { blobToCanvas, canvasToBlob, putBlob } from '../state/imageStore';
+import { nextStickerId, useStore } from '../state/store';
+import { blobToCanvas, canvasToBlob, getBlob, putBlob } from '../state/imageStore';
 import { invalidateStickerImage } from '../stickers/composite';
 import {
   applyBrush,
@@ -417,6 +417,20 @@ function drawBackdrop(ctx: CanvasRenderingContext2D, w: number, h: number, bg: s
 }
 
 export async function openCutoutForAsset(asset: Asset) {
+  if (asset.source === 'builtin') {
+    try {
+      const blob = await getBlob(asset.blobKey);
+      if (!blob) throw new Error('图片尚未就绪');
+      const id = nextStickerId().replace('st-', 'as-');
+      const copy: Asset = { ...asset, id, blobKey: `blob:${id}`, name: `${asset.name} · 副本`, source: 'upload', createdAt: Date.now() };
+      await putBlob(copy.blobKey, blob);
+      useStore.getState().set({ assets: [copy, ...useStore.getState().assets], cutout: { mode: 'asset', assetId: id } });
+      useStore.getState().showToast('已创建可剪切副本，内置原图保留');
+    } catch {
+      useStore.getState().showToast('纹样未能读取，请刷新后重试');
+    }
+    return;
+  }
   useStore.getState().set({ cutout: { mode: 'asset', assetId: asset.id } });
 }
 

@@ -1,8 +1,8 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_AI_SETTINGS, testConnection } from '../ai/client';
 import { providerRequestUrl } from '../ai/transport';
 
-beforeEach(() => { vi.stubGlobal('sessionStorage', { getItem: () => 'old-session-key' }); });
+vi.mock('idb-keyval', () => ({ get: vi.fn(async () => 'saved-test-key'), set: vi.fn(), del: vi.fn() }));
 afterEach(() => { vi.unstubAllGlobals(); });
 
 describe('完整 URL 连接检测', () => {

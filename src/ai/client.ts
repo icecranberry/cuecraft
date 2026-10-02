@@ -1,5 +1,5 @@
 import type { ArtworkCandidate, ArtworkPart, Asset, GenerationJob, JobStatus } from '../core/types';
-import { get as idbGet, set as idbSet } from 'idb-keyval';
+import { get as idbGet, set as idbSet, del as idbDel } from 'idb-keyval';
 import { useStore } from '../state/store';
 import { loadImage, canvasToBlob, putBlob } from '../state/imageStore';
 import { buildArtworkPrompt } from '../cue/artwork';
@@ -8,7 +8,7 @@ import { normalizeProviderUrl, providerUrlError, providerRequestUrl } from './tr
 
 // GPTImage 服务适配层（plan.md §6.1/§10）：
 // 兼容 OpenAI Image API 的生成与编辑；模型 ID 可配置；
-// 密钥仅保存在会话存储（非持久），不进入项目数据或导出文件（plan §10.1）。
+// 密钥单独保存在浏览器 IndexedDB，不进入项目数据或导出文件。
 
 export interface AiSettings {
   baseUrl: string;
@@ -51,13 +51,14 @@ export async function saveAiSettings(s: AiSettings) {
     editUrl: s.editUrl?.trim() ?? '', modelsUrl: s.modelsUrl?.trim() ?? '', model: s.model.trim() });
 }
 
-export function getApiKey(): string {
-  return sessionStorage.getItem('cue:ai:key') ?? '';
+export async function getApiKey(): Promise<string> {
+  return (await idbGet<string>('cue:ai:key')) ?? '';
 }
 
-export function setApiKey(key: string) {
-  if (key) sessionStorage.setItem('cue:ai:key', key);
-  else sessionStorage.removeItem('cue:ai:key');
+export async function setApiKey(key: string): Promise<void> {
+  const value = key.trim();
+  if (value) await idbSet('cue:ai:key', value);
+  else await idbDel('cue:ai:key');
 }
 
 function safeServiceMessage(message: string, key: string): string {
@@ -65,9 +66,9 @@ function safeServiceMessage(message: string, key: string): string {
 }
 
 /** 连接检测（与实际试生成分开，plan §10.1） */
-export async function testConnection(settings: AiSettings, apiKey = getApiKey()): Promise<{ ok: boolean; message: string; models?: string[]; warning?: boolean }> {
-  const key = apiKey.trim();
-  if (!key) return { ok: false, message: '未填写服务密钥。密钥仅保存在当前标签页，关闭标签页后需重新填写。' };
+export async function testConnection(settings: AiSettings, apiKey?: string): Promise<{ ok: boolean; message: string; models?: string[]; warning?: boolean }> {
+  const key = (apiKey ?? await getApiKey()).trim();
+  if (!key) return { ok: false, message: '未填写服务密钥，请到「服务设置」填写并保存。' };
   if (/^Bearer\s/i.test(key)) return { ok: false, message: '服务密钥只填写 API Key 本身，不要包含 Bearer 前缀。' };
   if (!settings.model.trim()) return { ok: false, message: '请填写图片模型名称，例如服务商示例中的 gpt-image-2。' };
   const modelsUrl = settings.modelsUrl?.trim();
@@ -157,6 +158,7 @@ export function cancelJob(id: string) {
 /** 创建生图任务（用户明确点击生成才调用，plan §10.3） */
 export async function startGeneration(input: GenerationJob['input'], mode: 'generate' | 'edit', connection?: { settings: AiSettings; apiKey: string }): Promise<GenerationJob> {
   const settings = connection ? { ...connection.settings } : await loadAiSettings();
+  const apiKey = connection?.apiKey ?? await getApiKey();
   const job: GenerationJob = {
     id: `job-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
     status: 'queued',
@@ -179,11 +181,11 @@ export async function startGeneration(input: GenerationJob['input'], mode: 'gene
     return dup;
   }
   st.addJob(job);
-  void executeJob(job, settings, connection?.apiKey);
+  void executeJob(job, settings, apiKey);
   return job;
 }
 
-async function executeJob(job: GenerationJob, settings: AiSettings, apiKey = getApiKey()) {
+async function executeJob(job: GenerationJob, settings: AiSettings, apiKey: string) {
   const st = useStore.getState();
   const addressError = providerUrlError(settings.baseUrl);
   if (addressError) {

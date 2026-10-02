@@ -12,7 +12,7 @@ vi.mock('../state/imageStore', () => ({
   removeBlob: vi.fn(), canvasToBlob: vi.fn()
 }));
 
-import { startGeneration, cancelJob, DEFAULT_AI_SETTINGS, loadAiSettings, saveAiSettings } from '../ai/client';
+import { startGeneration, cancelJob, DEFAULT_AI_SETTINGS, loadAiSettings, saveAiSettings, getApiKey, setApiKey } from '../ai/client';
 import { useStore } from '../state/store';
 import { createArtworkScope } from '../cue/artwork';
 import { resolveTemplate } from '../cue/templates';
@@ -33,11 +33,20 @@ beforeEach(() => {
   db.clear();
   db.set('settings:ai', { editUrl: 'https://api.openai.com/custom/images/edits?route=reference' });
   useStore.setState({ jobs: [], assets: [], loaded: false });
-  vi.stubGlobal('sessionStorage', { getItem: () => 'test-only-key' });
+  db.set('cue:ai:key', 'test-only-key');
 });
 afterEach(() => { vi.unstubAllGlobals(); vi.clearAllMocks(); });
 
 describe('服务设置保存', () => {
+  it('密钥独立持久保存，清空后删除，不混入服务设置', async () => {
+    await setApiKey(' persisted-test-key ');
+    expect(await getApiKey()).toBe('persisted-test-key');
+    expect(db.get('cue:ai:key')).toBe('persisted-test-key');
+    expect(JSON.stringify(await loadAiSettings())).not.toContain('persisted-test-key');
+    await setApiKey(' ');
+    expect(db.has('cue:ai:key')).toBe(false);
+    expect(await getApiKey()).toBe('');
+  });
   it('完整接口 URL 的路径和查询参数按原值保存', async () => {
     const address = 'https://aikun.uk/v1/images/generations?route=fast';
     await saveAiSettings({ ...DEFAULT_AI_SETTINGS, baseUrl: address });

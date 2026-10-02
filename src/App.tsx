@@ -75,8 +75,8 @@ export default function App() {
     <div className="app-shell">
       <a href="#main-content" className="skip-link" onClick={(e) => { e.preventDefault(); document.getElementById('main-content')?.focus(); }}>跳到主要内容</a>
       <header className="app-header">
-        <a href="#/workbench" className="brand" aria-label="CUE STUDIO 球杆定制">
-          <span className="brand-mark"><span /><span /></span><span><strong>CUE STUDIO</strong><small>球杆定制工作室</small></span>
+        <a href="#/workbench" className="brand" aria-label="台球杆定制">
+          <span className="brand-mark"><span /><span /></span><span><strong>台球杆定制</strong><small>3D 设计工作室</small></span>
         </a>
         <nav aria-label="主导航" className="main-nav">
         <SlidingIndicator activeKey={route} selector="a[aria-current=page]" />

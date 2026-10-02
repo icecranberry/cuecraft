@@ -156,3 +156,14 @@ Re-optimizing dependencies because vite config has changed
 23:00:54 [vite] hmr update /src/styles.css
 23:03:58 [vite] page reload .motion-check-build/index.html
 23:06:26 [vite] hmr update /src/pages/StudioWorkbench.tsx, /src/styles.css
+23:45:42 [vite] page reload artifacts/readme-build/index.html
+23:47:27 [vite] page reload index.html
+23:47:27 [vite] hmr update /src/App.tsx, /src/styles.css
+23:47:37 [vite] page reload artifacts/readme-build/index.html
+23:47:38 [vite] page reload artifacts/readme-build/index.html
+23:47:38 [vite] page reload artifacts/readme-build/index.html
+23:53:12 [vite] hmr update /src/styles.css, /src/pages/Settings.tsx, /src/pages/GenerateDrawer.tsx
+23:53:12 [vite] hmr update /src/pages/Settings.tsx, /src/styles.css
+23:53:12 [vite] page reload src/tests/connection.test.ts
+23:53:12 [vite] page reload src/tests/generation.test.ts
+23:53:57 [vite] hmr update /src/styles.css, /src/pages/Settings.tsx, /src/pages/GenerateDrawer.tsx

@@ -16,14 +16,14 @@ export function SettingsPage() {
 
   useEffect(() => {
     loadAiSettings().then(setS);
-    setKey(getApiKey());
+    getApiKey().then(setKey).catch(() => setTestMsg({ ok: false, message: '读取服务密钥失败，请检查浏览器存储权限后重试。' }));
   }, []);
 
   const save = async () => {
     setSaved(false);
     try {
       await saveAiSettings(s);
-      setApiKey(key.trim());
+      await setApiKey(key.trim());
       setTestMsg(null);
       setSaved(true);
       setTimeout(() => setSaved(false), 1600);
@@ -77,7 +77,7 @@ export function SettingsPage() {
             <p className="mt-1.5 text-xxs leading-relaxed text-ink-400">直接填写服务商调用示例中的完整 URL。程序不会追加任何路径。以 /chat/completions 结尾的地址使用 messages 格式；服务必须实际返回图片。</p>
           </div>
           <div className="col-span-2">
-            <Field label="服务密钥" hint="仅保存在当前标签页会话中">
+            <Field label="服务密钥" hint="保存在当前浏览器本地">
               <TextInput type="password" value={key} onChange={(e) => setKey(e.target.value)} placeholder="sk-…" />
             </Field>
           </div>
@@ -139,7 +139,7 @@ export function SettingsPage() {
           </div>
         )}
         <p className="mt-3 rounded bg-ink-800 p-2.5 text-xxs leading-relaxed text-ink-400">
-          密钥仅保存在当前标签页的会话中，不会放进你的作品或导出文件。刷新页面后仍可使用，关闭标签页后需重新填写。
+          密钥保存在当前浏览器的 IndexedDB 中，关闭页面后仍可使用，不会放进你的作品或导出文件。清空密钥并保存即可删除。
         </p>
       </Panel>
 

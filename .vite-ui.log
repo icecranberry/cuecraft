@@ -25,3 +25,62 @@
 17:45:54 [vite] hmr update /src/pages/StudioWorkbench.tsx, /src/styles.css
 17:45:55 [vite] hmr update /src/pages/StudioWorkbench.tsx, /src/styles.css
 17:46:55 [vite] hmr update /src/pages/StudioWorkbench.tsx, /src/styles.css
+18:17:27 [vite] hmr update /src/styles.css, /src/pages/Settings.tsx, /src/pages/GenerateDrawer.tsx
+18:17:27 [vite] hmr update /src/pages/Settings.tsx, /src/styles.css
+18:24:23 [vite] vite.config.ts changed, restarting server...
+18:24:23 [vite] hmr update /src/styles.css, /src/pages/Settings.tsx, /src/pages/GenerateDrawer.tsx
+18:24:23 [vite] server restarted.
+18:26:01 [vite] page reload src/tests/connection.test.ts
+18:26:52 [vite] page reload src/tests/providerProxy.test.ts
+18:27:26 [vite] page reload src/tests/generation.test.ts
+18:34:36 [vite] hmr update /src/pages/Settings.tsx, /src/styles.css
+19:13:54 [vite] src/ai/transport.ts changed, restarting server...
+19:13:54 [vite] server/imageProxy.ts changed, restarting server...
+19:13:54 [vite] page reload src/tests/connection.test.ts
+19:13:54 [vite] hmr update /src/styles.css, /src/pages/Settings.tsx, /src/pages/GenerateDrawer.tsx
+19:13:54 [vite] page reload src/tests/generation.test.ts
+19:13:54 [vite] page reload src/tests/providerProxy.test.ts
+Re-optimizing dependencies because lockfile has changed
+19:13:54 [vite] server restarted.
+19:31:19 [vite] src/ai/transport.ts changed, restarting server...
+19:31:19 [vite] hmr update /src/pages/Settings.tsx, /src/styles.css
+19:31:19 [vite] page reload src/tests/connection.test.ts
+19:31:19 [vite] page reload src/tests/generation.test.ts
+19:31:19 [vite] page reload src/tests/providerProxy.test.ts
+19:31:20 [vite] server restarted.
+19:35:16 [vite] src/ai/transport.ts changed, restarting server...
+19:35:16 [vite] hmr update /src/styles.css, /src/pages/Settings.tsx, /src/pages/GenerateDrawer.tsx
+19:35:16 [vite] hmr update /src/pages/Settings.tsx, /src/styles.css
+19:35:16 [vite] page reload src/tests/connection.test.ts
+19:35:16 [vite] page reload src/tests/generation.test.ts
+19:35:16 [vite] server restarted.
+19:43:40 [vite] src/ai/transport.ts changed, restarting server...
+19:43:40 [vite] server/imageProxy.ts changed, restarting server...
+19:43:40 [vite] hmr update /src/pages/Settings.tsx, /src/styles.css
+19:43:40 [vite] hmr update /src/styles.css, /src/pages/Settings.tsx, /src/pages/GenerateDrawer.tsx
+19:43:40 [vite] server restarted.
+19:46:38 [vite] server/imageProxy.ts changed, restarting server...
+19:46:38 [vite] server restarted.
+19:55:16 [vite] vite.config.ts changed, restarting server...
+19:55:16 [vite] page reload src/main.tsx
+Re-optimizing dependencies because vite config has changed
+19:55:16 [vite] server restarted.
+19:56:48 [vite] server/liveDiagnostic.ts changed, restarting server...
+19:56:48 [vite] page reload src/ai/liveDiagnostic.ts
+19:56:48 [vite] server restarted.
+19:58:59 [vite] page reload src/ai/client.ts
+19:58:59 [vite] hmr update /src/pages/Settings.tsx, /src/styles.css
+19:58:59 [vite] page reload src/tests/generation.test.ts
+20:05:21 [vite] server/liveDiagnostic.ts changed, restarting server...
+20:05:21 [vite] page reload src/ai/liveDiagnostic.ts
+20:05:21 [vite] server restarted.
+20:06:07 [vite] page reload src/ai/liveDiagnostic.ts
+20:06:52 [vite] page reload src/ai/client.ts
+20:06:52 [vite] hmr update /src/pages/Settings.tsx, /src/styles.css
+20:07:24 [vite] page reload src/tests/generation.test.ts
+20:07:43 [vite] page reload src/tests/generation.test.ts
+20:08:09 [vite] vite.config.ts changed, restarting server...
+20:08:09 [vite] page reload src/main.tsx
+Re-optimizing dependencies because vite config has changed
+20:08:09 [vite] server restarted.
+20:09:01 [vite] hmr update /src/pages/Settings.tsx, /src/styles.css

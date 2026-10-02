@@ -4,6 +4,7 @@ import { useStore } from '../state/store';
 import { loadImage, canvasToBlob, putBlob } from '../state/imageStore';
 import { buildArtworkPrompt } from '../cue/artwork';
 import { autoRemoveWhiteBg } from '../editor/cutout';
+import { normalizeProviderUrl, providerUrlError, providerRequestUrl } from './transport';
 
 // GPTImage 服务适配层（plan.md §6.1/§10）：
 // 兼容 OpenAI Image API 的生成与编辑；模型 ID 可配置；
@@ -11,6 +12,8 @@ import { autoRemoveWhiteBg } from '../editor/cutout';
 
 export interface AiSettings {
   baseUrl: string;
+  editUrl?: string;
+  modelsUrl?: string;
   model: string;
   size: string;
   quality: string;
@@ -19,7 +22,9 @@ export interface AiSettings {
 }
 
 export const DEFAULT_AI_SETTINGS: AiSettings = {
-  baseUrl: 'https://api.openai.com/v1',
+  baseUrl: 'https://api.openai.com/v1/images/generations',
+  editUrl: '',
+  modelsUrl: '',
   model: 'gpt-image-1',
   size: '1024x1024',
   quality: 'auto',
@@ -29,11 +34,21 @@ export const DEFAULT_AI_SETTINGS: AiSettings = {
 
 export async function loadAiSettings(): Promise<AiSettings> {
   const s = await idbGet<AiSettings>('settings:ai');
-  return { ...DEFAULT_AI_SETTINGS, ...(s ?? {}) };
+  const settings = { ...DEFAULT_AI_SETTINGS, ...(s ?? {}) };
+  return { ...settings, baseUrl: normalizeProviderUrl(settings.baseUrl) };
 }
 
 export async function saveAiSettings(s: AiSettings) {
-  await idbSet('settings:ai', s);
+  const addressError = providerUrlError(s.baseUrl);
+  if (addressError) throw new Error(addressError);
+  for (const [name, address] of [['图片编辑', s.editUrl], ['模型查询', s.modelsUrl]]) {
+    if (address?.trim()) {
+      const error = providerUrlError(address);
+      if (error) throw new Error(`${name}地址：${error}`);
+    }
+  }
+  await idbSet('settings:ai', { ...s, baseUrl: normalizeProviderUrl(s.baseUrl),
+    editUrl: s.editUrl?.trim() ?? '', modelsUrl: s.modelsUrl?.trim() ?? '', model: s.model.trim() });
 }
 
 export function getApiKey(): string {
@@ -45,23 +60,59 @@ export function setApiKey(key: string) {
   else sessionStorage.removeItem('cue:ai:key');
 }
 
-function joinUrl(base: string, path: string) {
-  return `${base.replace(/\/+$/, '')}${path}`;
+function safeServiceMessage(message: string, key: string): string {
+  return (key ? message.split(key).join('[密钥已隐藏]') : message).replace(/sk-[A-Za-z0-9_-]+/g, '[密钥已隐藏]').slice(0, 300);
 }
 
 /** 连接检测（与实际试生成分开，plan §10.1） */
-export async function testConnection(settings: AiSettings): Promise<{ ok: boolean; message: string; models?: string[] }> {
+export async function testConnection(settings: AiSettings, apiKey = getApiKey()): Promise<{ ok: boolean; message: string; models?: string[]; warning?: boolean }> {
+  const key = apiKey.trim();
+  if (!key) return { ok: false, message: '未填写服务密钥。密钥仅保存在当前标签页，关闭标签页后需重新填写。' };
+  if (/^Bearer\s/i.test(key)) return { ok: false, message: '服务密钥只填写 API Key 本身，不要包含 Bearer 前缀。' };
+  if (!settings.model.trim()) return { ok: false, message: '请填写图片模型名称，例如服务商示例中的 gpt-image-2。' };
+  const modelsUrl = settings.modelsUrl?.trim();
+  const address = modelsUrl || settings.baseUrl.trim();
+  const addressError = providerUrlError(address);
+  if (addressError) return { ok: false, message: addressError };
   try {
-    const resp = await fetch(joinUrl(settings.baseUrl, '/models'), {
-      headers: { Authorization: `Bearer ${getApiKey()}` },
+    // 未配置查询接口时，只向原 URL 发 HEAD，不生成图片，不猜测或拼接 /models。
+    const resp = await fetch(providerRequestUrl(address), {
+      method: modelsUrl ? 'GET' : 'HEAD',
+      headers: { Authorization: `Bearer ${key}` },
       signal: AbortSignal.timeout(15000)
     });
-    if (!resp.ok) return { ok: false, message: `HTTP ${resp.status}` };
-    const json = await resp.json();
-    const models: string[] = (json.data ?? []).map((m: { id: string }) => m.id).slice(0, 50);
-    return { ok: true, message: `连接成功，服务可用模型 ${models.length} 个`, models };
+    if (!modelsUrl && [404, 405].includes(resp.status)) return { ok: true, warning: true, message: `服务已响应（HEAD 返回 HTTP ${resp.status}）。图片接口可能只支持 POST，不能据此判定 URL 错误。尚未验证密钥和图片模型，需实际生成或填写完整的模型查询地址后检测。` };
+    const body = await resp.text();
+    let json: { data?: unknown; error?: { message?: unknown }; message?: unknown } | undefined;
+    try { json = JSON.parse(body); } catch { /* 非 JSON 响应交由下方诊断 */ }
+    if (!resp.ok) {
+      const reasons: Record<number, string> = {
+        401: '密钥未通过验证，请检查是否过期、复制完整，以及是否属于此服务商',
+        403: '服务拒绝访问，请检查密钥权限或服务商的访问限制',
+        404: '填写的完整请求 URL 不存在，请与服务商示例核对；程序没有追加或改写接口路径',
+        405: '填写的模型查询接口不支持 GET，请核对该完整地址',
+        429: '服务限制了请求，请检查额度或稍后再试'
+      };
+      const detail = json?.error?.message ?? json?.message;
+      return { ok: false, message: `HTTP ${resp.status}：${reasons[resp.status] ?? '服务返回错误，请检查服务商状态'}${typeof detail === 'string' ? `。服务提示：${safeServiceMessage(detail, key)}` : ''}` };
+    }
+    if (!modelsUrl) {
+      if (resp.headers.get('content-type')?.includes('text/html')) return { ok: false, message: '此地址返回网页内容，请确认填写的是服务商提供的完整图片请求 URL。' };
+      return { ok: true, warning: true, message: '服务已响应，完整 URL 的网络检测通过。HEAD 检测不会生成图片，也不能确认密钥、模型和生图参数是否可用。' };
+    }
+    if (!Array.isArray(json?.data)) return { ok: false, message: '模型查询地址已响应，但未返回兼容的模型列表，请核对完整的模型查询 URL。' };
+    const models = json.data.flatMap((m: unknown) => {
+      if (m && typeof m === 'object' && 'id' in m && typeof m.id === 'string') return [m.id];
+      return [];
+    });
+    const model = settings.model.trim();
+    const modelHint = model && !models.includes(model) ? `；列表中未找到所选模型「${model}」，请向服务商确认模型名称和图片接口权限` : '';
+    return { ok: true, message: `连接成功，服务返回 ${models.length} 个模型${modelHint}。图片生成能力仍需实际生成验证。`, models: models.slice(0, 50) };
   } catch (e) {
-    return { ok: false, message: `连接失败：${(e as Error).message}` };
+    const error = e as Error;
+    if (error.name === 'TimeoutError' || error.name === 'AbortError') return { ok: false, message: '连接检测超时（15 秒），请检查网络、代理或服务商状态。' };
+    if (error instanceof TypeError) return { ok: false, message: '浏览器未能取得服务响应。可能是网络、代理、证书或服务未允许浏览器跨域访问；请查看浏览器控制台的具体错误。' };
+    return { ok: false, message: `连接失败：${safeServiceMessage(error.message, key)}` };
   }
 }
 
@@ -104,8 +155,8 @@ export function cancelJob(id: string) {
 }
 
 /** 创建生图任务（用户明确点击生成才调用，plan §10.3） */
-export async function startGeneration(input: GenerationJob['input'], mode: 'generate' | 'edit'): Promise<GenerationJob> {
-  const settings = await loadAiSettings();
+export async function startGeneration(input: GenerationJob['input'], mode: 'generate' | 'edit', connection?: { settings: AiSettings; apiKey: string }): Promise<GenerationJob> {
+  const settings = connection ? { ...connection.settings } : await loadAiSettings();
   const job: GenerationJob = {
     id: `job-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
     status: 'queued',
@@ -128,15 +179,29 @@ export async function startGeneration(input: GenerationJob['input'], mode: 'gene
     return dup;
   }
   st.addJob(job);
-  void executeJob(job, settings);
+  void executeJob(job, settings, connection?.apiKey);
   return job;
 }
 
-async function executeJob(job: GenerationJob, settings: AiSettings) {
+async function executeJob(job: GenerationJob, settings: AiSettings, apiKey = getApiKey()) {
   const st = useStore.getState();
-  const key = getApiKey();
+  const addressError = providerUrlError(settings.baseUrl);
+  if (addressError) {
+    st.updateJob(job.id, { status: 'failed', error: addressError });
+    return;
+  }
+  const key = apiKey.trim();
   if (!key) {
     st.updateJob(job.id, { status: 'failed', error: '未配置 API Key，请到「设置」填写' });
+    return;
+  }
+  if (/^Bearer\s/i.test(key) || !settings.model.trim()) {
+    st.updateJob(job.id, { status: 'failed', error: /^Bearer\s/i.test(key) ? '服务密钥只填写 API Key 本身，不要包含 Bearer 前缀。' : '未填写图片模型名称，请到「设置」填写。' });
+    return;
+  }
+  const needsEdit = job.input.refAssetIds.length > 0 || job.input.scope?.mode === 'linked';
+  if (needsEdit && (!settings.editUrl?.trim() || providerUrlError(settings.editUrl))) {
+    st.updateJob(job.id, { status: 'failed', error: '参考图和多部位联动需要图片编辑接口。请在设置中填写服务商提供的完整「图片编辑 URL」，程序不会根据生图地址猜测编辑地址。' });
     return;
   }
   const ctrl = new AbortController();
@@ -155,34 +220,42 @@ async function executeJob(job: GenerationJob, settings: AiSettings) {
       let resp: Response;
       if (refs.length) {
         const fd = new FormData();
-        fd.append('model', settings.model);
+        fd.append('model', settings.model.trim());
         fd.append('prompt', prompt);
         fd.append('size', settings.size);
         fd.append('n', '1');
         if (settings.quality && settings.quality !== 'auto') fd.append('quality', settings.quality);
         for (const r of refs) fd.append(refs.length === 1 ? 'image' : 'image[]', r.blob, r.name);
-        resp = await fetch(joinUrl(settings.baseUrl, '/images/edits'), {
+        resp = await fetch(providerRequestUrl(settings.editUrl!), {
           method: 'POST', headers: { Authorization: `Bearer ${key}` }, body: fd, signal: ctrl.signal
         });
       } else {
-        resp = await fetch(joinUrl(settings.baseUrl, '/images/generations'), {
+        const chat = /\/chat\/completions\/?$/.test(new URL(settings.baseUrl.trim()).pathname);
+        resp = await fetch(providerRequestUrl(settings.baseUrl), {
           method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
-          body: JSON.stringify({ model: settings.model, prompt, n: 1, size: settings.size,
-            ...(settings.quality && settings.quality !== 'auto' ? { quality: settings.quality } : {}) }), signal: ctrl.signal
+          body: JSON.stringify(chat
+            ? { model: settings.model.trim(), messages: [{ role: 'user', content: prompt }], temperature: 0.7 }
+            : { model: settings.model.trim(), prompt, n: 1, size: settings.size,
+                ...(settings.quality && settings.quality !== 'auto' ? { quality: settings.quality } : {}) }), signal: ctrl.signal
         });
       }
-      if (!resp.ok) throw new Error(`HTTP ${resp.status} ${(await resp.text()).slice(0, 300)}`);
+      if (!resp.ok) throw new Error(`HTTP ${resp.status} ${safeServiceMessage(await resp.text(), key)}`);
       const json = await resp.json();
       const d = json.data?.[0];
-      if (!d) throw new Error('响应中没有图像数据');
       // OpenAI 标准字段为 b64_json；保留兼容服务的 b64 字段。
-      if (d.b64_json || d.b64) return b64ToBlob(d.b64_json || d.b64);
-      if (d.url) {
-        const imageResp = await fetch(d.url, { signal: ctrl.signal });
+      if (d?.b64_json || d?.b64) return b64ToBlob(d.b64_json || d.b64);
+      const message = json.choices?.[0]?.message;
+      const parts = [...(Array.isArray(message?.images) ? message.images : []), ...(Array.isArray(message?.content) ? message.content : [])];
+      const chatImage = parts.find(p => p?.type === 'image_url' || p?.image_url)?.image_url;
+      const markdownImage = typeof message?.content === 'string' ? message.content.match(/!\[[^\]]*\]\((https?:\/\/[^\s)]+|data:image\/[^\s)]+)\)/)?.[1] : undefined;
+      const imageUrl = d?.url ?? (typeof chatImage === 'string' ? chatImage : chatImage?.url) ?? markdownImage;
+      if (typeof imageUrl === 'string' && /^data:image\/[\w.+-]+;base64,/.test(imageUrl)) return b64ToBlob(imageUrl);
+      if (typeof imageUrl === 'string' && /^https?:\/\//.test(imageUrl)) {
+        const imageResp = await fetch(imageUrl, { signal: ctrl.signal });
         if (!imageResp.ok) throw new Error(`下载生成图失败：HTTP ${imageResp.status}`);
         return await imageResp.blob();
       }
-      throw new Error('响应中没有可用图像');
+      throw new Error(message ? '服务返回了聊天响应，但没有图片。请确认该模型和聊天接口支持生图；文字回答不算生图成功。' : '响应中没有可用图像');
     } finally {
       clearTimeout(timer);
     }

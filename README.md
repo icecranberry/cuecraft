@@ -14,6 +14,12 @@ npm run build      # 生产构建
 
 要求 Node ≥ 18。所有数据（素材、设计、版本、作品）保存在浏览器 IndexedDB；API Key 仅保存在当前会话（sessionStorage，非持久化），不进入项目数据或导出文件。
 
+设置中的图片生成 URL 是完整请求地址，直接使用用户填写的路径、尾斜杠和查询参数，不追加 `/v1`、`/images/generations`、`/images/edits` 或 `/models`。例如 Aikun 的生图示例填写 `https://aikun.uk/v1/images/generations`，模型填写 `gpt-image-2`。图片编辑 URL 与模型查询 URL 分别填写完整地址；参考图和多部位联动需要编辑 URL，缺失时在生图前提示。连接检测有模型查询 URL 时对该地址发 GET；否则只对图片生成 URL 发 HEAD，不生图，也不据此声称密钥、模型或出图能力已验证。
+
+本地开发及 `npm run preview` 通过本地服务器转发 TokenRhythm 和 Aikun 请求，保留完整的上游路径与查询参数，以适配浏览器跨域限制。转发目标域名固定；密钥只随请求传递，不写入服务器文件或日志。其他供应商使用直连。部署到纯静态托管时，需要另行配置 `/api/image-provider/tokenrhythm` 和 `/api/image-provider/aikun` 转发。
+
+完整地址以 `/chat/completions` 结尾时，生成请求使用服务商示例的 `model`、`messages`、`temperature` 格式，URL 保持原值。兼容聊天响应中的图片内容与 Markdown 图片；纯文字回答不会标记为生图成功。聊天接口的尺寸和质量由服务商决定，参考图仍需要单独的图片编辑 URL。设置页「单张试生成」使用当前输入的配置发送真实请求，成功图片保存到素材库。
+
 ## 多部位 AI 定制与聚焦距离
 
 - AI 定制支持「多部位联动」和「单独调整部位」。提供前臂＋尾段、主纹样＋装饰环、后把通体三个组合，也可自行勾选部位。皮头不参与印刷；握把默认保留，可按通体设计需要选入。

@@ -1,2 +1,9 @@
 node_modules
 artifacts
+dist/
+.mode-check-build/
+.motion-check-build/
+*.log
+.env
+.env.*
+!.env.example

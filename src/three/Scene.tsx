@@ -1,10 +1,15 @@
+import { ringOverride } from '../cue/ringColors';
+import { appearancePartId, partAppearance } from '../cue/partAppearance';
+import { tailPrintSegment } from '../cue/tailPrint';
 import * as THREE from 'three';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { createContext, memo, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { Canvas, useFrame, useThree, type ThreeEvent, type Intersection } from '@react-three/fiber';
 import { ContactShadows, Environment, Html, Lightformer, OrbitControls } from '@react-three/drei';
 import type { CueTemplate, DesignSnapshot, FaceSpec, SegmentSpec, StickerInstance } from '../core/types';
 import { expandedSegments, faceById, segmentById, resolveTemplate } from '../cue/templates';
-import { buildFaceGeometry, buildSegmentGeometry } from '../cue/geometry';
+import { buildSegmentGeometry } from '../cue/geometry';
+import { buildDisplaySegmentGeometry, buildDisplayFaceGeometry, bumperSurfaceFrame } from '../cue/displayGeometry';
+import { photoSource } from '../export/renderPhoto';
 import {
   angDelta,
   faceUvToSurface,
@@ -32,10 +37,13 @@ import { partFocusDistance } from './framing';
 import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib';
 import { bindCueAxisSnap } from './watchCamera';
 import { previewPrintResolution } from '../stickers/previewResolution';
+import { prepareSceneStartup, SceneStartup } from './startup';
+
+const StartupContext = createContext<SceneStartup | null>(null);
 
 // 三维工作台（plan.md §3/§5.4）：单个实时渲染场景，部件拾取、贴纸拖放、视角控制。
 
-const DEFAULT_STICKER_W = 22;
+const DEFAULT_STICKER_W = 88; // 原默认宽度的 400%；高度按素材比例同步放大。
 
 export function sceneX(totalLen: number, a: number) {
   return a - totalLen / 2;
@@ -128,27 +136,8 @@ function GhostSticker() {
   );
 }
 
-/** 选中贴纸的边框 + 操控条（移动靠拖动，其余在此操作） */
-function makeBorderTexture(): THREE.CanvasTexture {
-  const c = document.createElement('canvas');
-  c.width = 256;
-  c.height = 256;
-  const ctx = c.getContext('2d')!;
-  ctx.strokeStyle = '#f5a623';
-  ctx.lineWidth = 7;
-  ctx.setLineDash([14, 10]);
-  ctx.strokeRect(6, 6, 244, 244);
-  ctx.setLineDash([]);
-  ctx.fillStyle = '#ffffff';
-  for (const [x, y] of [[6, 6], [250, 6], [6, 250], [250, 250]] as const) {
-    ctx.beginPath();
-    ctx.arc(x, y, 7, 0, Math.PI * 2);
-    ctx.fill();
-  }
-  const t = new THREE.CanvasTexture(c);
-  t.colorSpace = THREE.SRGBColorSpace;
-  return t;
-}
+// 选框直接投影为屏幕 SVG，线宽与角点不随贴纸尺寸或相机缩放而拉伸。
+const overlayScreenOrigin = (): [number, number] => [0, 0];
 
 function stickerWorldTransform(s: StickerInstance, tpl: CueTemplate, out: { pos: THREE.Vector3; quat: THREE.Quaternion; w: number; h: number }) {
   const PAD = 7;
@@ -173,6 +162,13 @@ function stickerWorldTransform(s: StickerInstance, tpl: CueTemplate, out: { pos:
   }
   const face = faceById(tpl, s.target.faceId);
   if (!face) return false;
+  if (face.id === 'face-butt') {
+    const frame = bumperSurfaceFrame(face, s.target.fx, s.target.fz);
+    out.pos.copy(frame.position).addScaledVector(frame.normal, 0.6);
+    out.pos.x -= tpl.lengthMm / 2;
+    out.quat.copy(frame.quaternion);
+    return true;
+  }
   out.pos.set(sceneX(tpl.lengthMm, face.a) + face.normalSign * 0.6, s.target.fx, s.target.fz);
   out.quat.setFromRotationMatrix(
     new THREE.Matrix4().makeBasis(
@@ -189,25 +185,38 @@ function StickerOverlay({ tpl }: { tpl: CueTemplate }) {
   const sticker = useStore((s) =>
     s.selection.kind === 'sticker' ? s.design.stickers.find((x) => x.id === s.selection.id) ?? null : null
   );
-  const meshRef = useRef<THREE.Mesh>(null);
   const groupRef = useRef<THREE.Group>(null);
-  const borderTex = useMemo(makeBorderTexture, []);
-  useEffect(() => () => borderTex.dispose(), [borderTex]);
+  const borderRef = useRef<SVGSVGElement>(null);
+  const outlineRef = useRef<SVGPolygonElement>(null);
+  const cornerRefs = useRef<(SVGCircleElement | null)[]>([]);
+  const { size } = useThree();
   const tmp = useRef({ pos: new THREE.Vector3(), quat: new THREE.Quaternion(), w: 10, h: 10 });
+  const corners = useMemo(() => Array.from({ length: 4 }, () => new THREE.Vector3()), []);
 
-  useFrame(() => {
-    const m = meshRef.current;
+  useFrame(({ camera, size: viewport }) => {
     const g = groupRef.current;
-    if (!m || !g) return;
+    const border = borderRef.current;
+    if (!g || !border) return;
     const visible = !!sticker && stickerWorldTransform(sticker, tpl, tmp.current);
-    m.visible = visible;
     g.visible = visible;
+    border.style.visibility = visible ? 'visible' : 'hidden';
     if (!visible || !sticker) return;
-    m.position.copy(tmp.current.pos);
-    m.quaternion.copy(tmp.current.quat);
-    m.scale.set(tmp.current.w, tmp.current.h, 1);
     g.position.copy(tmp.current.pos);
     g.quaternion.copy(tmp.current.quat);
+    const { pos, quat, w, h } = tmp.current;
+    let inFront = true;
+    const points = corners.map((corner, i) => {
+      corner.set((i === 0 || i === 3 ? -1 : 1) * w / 2, (i < 2 ? 1 : -1) * h / 2, 0)
+        .applyQuaternion(quat).add(pos).project(camera);
+      inFront &&= corner.z >= -1 && corner.z <= 1;
+      const x = (corner.x + 1) * viewport.width / 2;
+      const y = (1 - corner.y) * viewport.height / 2;
+      cornerRefs.current[i]?.setAttribute('cx', String(x));
+      cornerRefs.current[i]?.setAttribute('cy', String(y));
+      return `${x},${y}`;
+    });
+    border.style.visibility = inFront ? 'visible' : 'hidden';
+    outlineRef.current?.setAttribute('points', points.join(' '));
   });
 
   if (!sticker) return null;
@@ -217,10 +226,15 @@ function StickerOverlay({ tpl }: { tpl: CueTemplate }) {
 
   return (
     <>
-      <mesh ref={meshRef} renderOrder={20}>
-        <planeGeometry args={[1, 1]} />
-        <meshBasicMaterial map={borderTex} transparent depthTest={false} toneMapped={false} opacity={0.95} side={THREE.DoubleSide} />
-      </mesh>
+      <Html calculatePosition={overlayScreenOrigin} zIndexRange={[19, 19]} style={{ pointerEvents: 'none' }}>
+        <svg ref={borderRef} width={size.width} height={size.height} aria-hidden="true"
+          style={{ position: 'absolute', left: 0, top: 0, pointerEvents: 'none', overflow: 'hidden' }}>
+          <polygon ref={outlineRef} fill="none" stroke="#f5a623" strokeWidth={2}
+            strokeDasharray="8 6" strokeLinejoin="round" />
+          {[0, 1, 2, 3].map((i) => <circle key={i} ref={(node) => { cornerRefs.current[i] = node; }}
+            r={4} fill="white" stroke="#f5a623" strokeWidth={1} />)}
+        </svg>
+      </Html>
       <group ref={groupRef}>
         <Html center zIndexRange={[18, 12]} position={[0, 0, 0]} style={{ pointerEvents: 'none' }}>
           <div
@@ -278,6 +292,14 @@ function updateGhost(hit: SurfaceHit, tpl: CueTemplate) {
   } else {
     const face = faceById(tpl, hit.surfaceId);
     if (!face) return;
+    if (face.id === 'face-butt') {
+      const frame = bumperSurfaceFrame(face, hit.fx ?? 0, hit.fz ?? 0);
+      ghostState.pos.copy(frame.position).addScaledVector(frame.normal, 0.6);
+      ghostState.pos.x -= tpl.lengthMm / 2;
+      ghostState.quat.copy(frame.quaternion);
+      ghostState.active = true;
+      return;
+    }
     ghostState.pos.set(sceneX(tpl.lengthMm, face.a), hit.fx ?? 0, hit.fz ?? 0);
     ghostState.quat.setFromRotationMatrix(
       new THREE.Matrix4().makeBasis(
@@ -430,9 +452,10 @@ function CuePart({
   totalLen: number;
   tpl: CueTemplate;
 }) {
+  const startup = useContext(StartupContext);
   const gl = useThree((s) => s.gl);
   const geom = useMemo(() => {
-    const g = buildSegmentGeometry(seg);
+    const g = buildDisplaySegmentGeometry(seg);
     g.translate(-totalLen / 2, 0, 0);
     return g;
   }, [seg, totalLen]);
@@ -451,7 +474,7 @@ function CuePart({
   const whiteModel = useStore((s) => s.showWhiteModel);
   const exportCheckMode = useStore((s) => s.exportCheckMode);
   const exportCheckData = useStore((s) => s.exportCheckData);
-  const override = design.partOverrides[seg.id];
+  const override = ringOverride(seg.id, design.partOverrides);
   const finishId = override?.finish ?? design.globalFinish;
   const presetId = whiteModel ? 'whiteSolid' : override?.matPreset ?? seg.matPreset;
 
@@ -463,17 +486,21 @@ function CuePart({
       colorOverride: whiteModel ? '#d8d8d8' : override?.color,
       circMm: 2 * Math.PI * ((seg.r0 + seg.r1) / 2),
       lenMm: seg.a1 - seg.a0,
-      axialOriginMm: seg.a0
+      axialOriginMm: seg.a0,
+      partKind: seg.kind
     });
     setHandle(h);
-    return () => h.dispose();
-  }, [presetId, finishId, override?.color, seg.r0, seg.r1, seg.a0, seg.a1, whiteModel]);
+    const complete = startup?.begin();
+    void h.ready.finally(complete);
+    return () => { complete?.(); h.dispose(); };
+  }, [presetId, finishId, override?.color, seg.r0, seg.r1, seg.a0, seg.a1, seg.kind, whiteModel]);
 
   // 印刷层合成（plan §4.3：拖动时轻量，停止后清晰）
   useEffect(() => {
     if (!handle) return;
     let dead = false;
     let tex: THREE.CanvasTexture | null = null;
+    const complete = startup?.begin();
     (async () => {
       const stickers = design.stickers.filter((s) => stickerOverlapsSegment(s, seg));
       await Promise.all(stickers.map(getStickerImage));
@@ -492,9 +519,10 @@ function CuePart({
       if (dead) return;
       tex = canvasToTexture(canvas, gl.capabilities.getMaxAnisotropy());
       handle.setPrintMap(tex);
-    })();
+    })().catch((error) => console.warn('图案预览暂用底材：', error)).finally(complete);
     return () => {
       dead = true;
+      complete?.();
       tex?.dispose();
     };
   }, [handle, design.stickers, quality, interactive, gl, seg, tpl, exportCheckMode, exportCheckData]);
@@ -515,7 +543,7 @@ function CuePart({
     <>
       <mesh
         geometry={geom}
-        userData={{ surfaceKind: 'lathe', segId: seg.id }}
+        userData={{ surfaceKind: 'lathe', segId: seg.id, materialReady: !!handle }}
         castShadow
         receiveShadow
       >
@@ -537,9 +565,10 @@ function CueFace({
   totalLen: number;
   tpl: CueTemplate;
 }) {
+  const startup = useContext(StartupContext);
   const gl = useThree((s) => s.gl);
   const geom = useMemo(() => {
-    const g = buildFaceGeometry(face);
+    const g = buildDisplayFaceGeometry(face);
     g.translate(-totalLen / 2, 0, 0);
     return g;
   }, [face, totalLen]);
@@ -549,9 +578,10 @@ function CueFace({
   const quality = useStore((s) => s.quality);
   const interactive = useStore((s) => s.interactive);
   const whiteModel = useStore((s) => s.showWhiteModel);
-  const override = design.partOverrides[face.id];
+  const appearance = partAppearance(tpl, face.id, design.partOverrides);
+  const override = appearance.override;
   const finishId = override?.finish ?? design.globalFinish;
-  const presetId = whiteModel ? 'whiteSolid' : override?.matPreset ?? face.matPreset;
+  const presetId = whiteModel ? 'whiteSolid' : appearance.presetId ?? face.matPreset;
 
   const [handle, setHandle] = useState<CueMaterialHandle | null>(null);
   useEffect(() => {
@@ -561,16 +591,20 @@ function CueFace({
       colorOverride: whiteModel ? '#d8d8d8' : override?.color,
       circMm: face.radius * 2,
       lenMm: face.radius * 2,
-      surface: 'face'
+      surface: 'face',
+      partKind: face.id === 'face-butt' ? 'butt' : undefined
     });
     setHandle(h);
-    return () => h.dispose();
+    const complete = startup?.begin();
+    void h.ready.finally(complete);
+    return () => { complete?.(); h.dispose(); };
   }, [presetId, finishId, override?.color, face.radius, whiteModel]);
 
   useEffect(() => {
     if (!handle) return;
     let dead = false;
     let tex: THREE.CanvasTexture | null = null;
+    const complete = startup?.begin();
     (async () => {
       const stickers = design.stickers.filter((s) => !s.hidden && s.target.kind === 'face' && s.target.faceId === face.id);
       await Promise.all(stickers.map(getStickerImage));
@@ -587,31 +621,51 @@ function CueFace({
       if (dead) return;
       tex = canvasToTexture(canvas, gl.capabilities.getMaxAnisotropy());
       handle.setPrintMap(tex);
-    })();
+    })().catch((error) => console.warn('端面图案预览暂用底材：', error)).finally(complete);
     return () => {
       dead = true;
+      complete?.();
       tex?.dispose();
     };
   }, [handle, design.stickers, interactive, quality, gl, face]);
+
+  useEffect(() => {
+    if (!handle || face.id !== 'face-butt') return;
+    const strip = tailPrintSegment(tpl);
+    if (!strip) return;
+    let dead = false;
+    let texture: THREE.CanvasTexture | null = null;
+    const complete = startup?.begin();
+    const stickers = design.stickers.filter((sticker) => stickerOverlapsSegment(sticker, strip));
+    void (async () => {
+      await Promise.all(stickers.map(getStickerImage));
+      if (dead) return;
+      if (!stickers.length) { handle.setContinuationMap(null); return; }
+      const { ppm, maxDim } = previewPrintResolution(2 * Math.PI * strip.r0, strip.a1 - strip.a0, stickers, getCachedStickerImage, quality, interactive, gl.capabilities.maxTextureSize);
+      texture = canvasToTexture(composeSegmentPrint(strip, stickers, ppm, maxDim, expandedSegments(tpl)).canvas, gl.capabilities.getMaxAnisotropy());
+      handle.setContinuationMap(texture);
+    })().catch((error) => console.warn('尾端图案预览暂用底材：', error)).finally(complete);
+    return () => { dead = true; complete?.(); texture?.dispose(); };
+  }, [handle, face.id, tpl, design.stickers, quality, interactive, gl]);
 
   const selection = useStore((s) => s.selection);
   const hoverId = useStore((s) => s.hoverId);
   useEffect(() => {
     const level =
-      selection.kind === 'part' && selection.id === face.id
+      selection.kind === 'part' && selection.id === appearance.partId
         ? 'selected'
-        : hoverId === face.id
+        : hoverId === appearance.partId
           ? 'hover'
           : 'none';
     applyEmissive(handle, level);
-  }, [handle, selection, hoverId, face.id]);
+  }, [handle, selection, hoverId, appearance.partId]);
 
   return (
     <>
-      <mesh geometry={geom} userData={{ surfaceKind: 'face', faceId: face.id }} castShadow>
+      <mesh geometry={geom} userData={{ surfaceKind: 'face', faceId: face.id, materialReady: !!handle }} castShadow>
         {handle ? <primitive object={handle.material} attach="material" /> : null}
       </mesh>
-      <PartSelectionFx partId={face.id} tpl={tpl} kind="face" />
+      {face.id !== 'face-butt' && <PartSelectionFx partId={face.id} tpl={tpl} kind="face" />}
     </>
   );
 }
@@ -752,7 +806,7 @@ function CueGroup({ tpl }: { tpl: CueTemplate }) {
     }
     ghostState.active = false;
     const hitSticker = pickSticker([hit], st.design.stickers, tpl, alphaGetter);
-    const hoverId = hitSticker ? hitSticker.id : hit.surfaceId;
+    const hoverId = hitSticker ? hitSticker.id : appearancePartId(hit.surfaceId);
     if (st.hoverId !== hoverId) st.set({ hoverId });
   };
 
@@ -787,7 +841,7 @@ function CueGroup({ tpl }: { tpl: CueTemplate }) {
 /** 取景方向（俯视约 17°、方位约 -20°），全程固定，距离按部件尺寸计算 */
 const VIEW_DIR = new THREE.Vector3(0.38, 0.34, 0.86).normalize();
 
-function CameraRig({ tpl }: { tpl: CueTemplate }) {
+function CameraRig({ tpl, ready }: { tpl: CueTemplate; ready: boolean }) {
   const { camera, controls, size } = useThree() as unknown as {
     camera: THREE.PerspectiveCamera;
     controls: OrbitControlsImpl | null;
@@ -877,7 +931,14 @@ function CameraRig({ tpl }: { tpl: CueTemplate }) {
   }, [watching, view, focusPartId, viewNonce, tpl, size.width, size.height]);
 
   useFrame(() => {
-    if (!animating.current) return;
+    if (!ready || !animating.current) return;
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      camera.position.copy(goal.current.pos);
+      controls?.target.copy(goal.current.target);
+      controls?.update();
+      animating.current = false;
+      return;
+    }
     camera.position.lerp(goal.current.pos, 0.12);
     if (controls) {
       controls.target.lerp(goal.current.target, 0.12);
@@ -904,17 +965,87 @@ function FpsMeter() {
   return null;
 }
 
-export function CueScene({ tpl }: { tpl: CueTemplate }) {
+function StartupWarmup({ startup, onReady }: { startup: SceneStartup; onReady: () => void }) {
+  const { gl, scene, camera } = useThree();
+  const running = useRef(false);
+  const alive = useRef(true);
+  const frames = useRef<(() => void)[]>([]);
+  const onReadyRef = useRef(onReady);
+  onReadyRef.current = onReady;
+  useEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+      frames.current.splice(0).forEach((resolve) => resolve());
+    };
+  }, []);
+  useFrame(() => {
+    frames.current.splice(0).forEach((resolve) => resolve());
+    if (running.current || startup.released || startup.pending || !scene.environment) return;
+    let count = 0;
+    let mounted = true;
+    const surfaces: THREE.Object3D[] = [];
+    scene.traverse((object) => {
+      if (!object.userData.surfaceKind) return;
+      count++;
+      mounted &&= object.userData.materialReady === true;
+      surfaces.push(object);
+    });
+    if (!count || !mounted) return;
+    running.current = true;
+    // Warm every cue part, even those outside the opening camera's first view.
+    // Otherwise the moving camera would trigger their first texture/buffer upload.
+    const culling = surfaces.map((object) => object.frustumCulled);
+    surfaces.forEach((object) => { object.frustumCulled = false; });
+    void prepareSceneStartup(startup,
+      () => gl.compileAsync(scene, camera).catch((error) => {
+        console.warn('场景异步预编译不可用，改用同步预编译：', error);
+        gl.compile(scene, camera);
+      }),
+      () => new Promise<void>((resolve) => frames.current.push(resolve)),
+      () => gl.getContext().finish(),
+      () => alive.current && !gl.getContext().isContextLost(),
+    ).then((prepared) => {
+      if (!prepared) return;
+      startup.released = true;
+      onReadyRef.current();
+    }).catch((error) => {
+      console.warn('场景预编译失败，将在遮罩后重试：', error);
+    }).finally(() => {
+      surfaces.forEach((object, index) => { object.frustumCulled = culling[index]; });
+      running.current = false;
+    });
+  }, -100);
+  return null;
+}
+
+// Keep the generated environment stable when the loading mask is removed.
+// Re-capturing it would move PMREM generation back into the first camera frame.
+const StudioEnvironment = memo(function StudioEnvironment() {
+  return <Environment resolution={512}>
+    <Lightformer form="rect" intensity={2.6} color="#fff8ef" position={[0, 360, 300]} scale={[1300, 210, 1]} />
+    <Lightformer form="rect" intensity={1.4} color="#f1f5fa" position={[0, 80, -420]} scale={[1250, 46, 1]} />
+    <Lightformer form="rect" intensity={0.45} position={[-260, -110, 400]} scale={[900, 260, 1]} />
+    <Lightformer form="rect" intensity={0.22} color="#ddd5c8" position={[0, -360, 0]} scale={[1400, 500, 1]} />
+    <Lightformer form="rect" intensity={0.8} color="#fff8ef" position={[1300, 0, 0]} rotation={[0, Math.PI / 2, 0]} scale={[350, 350, 1]} />
+    <Lightformer form="rect" intensity={0.6} color="#edf2f5" position={[-1300, 0, 0]} rotation={[0, Math.PI / 2, 0]} scale={[350, 350, 1]} />
+  </Environment>;
+});
+
+export function CueScene({ tpl, onReady }: { tpl: CueTemplate; onReady?: () => void }) {
+  const startup = useMemo(() => new SceneStartup(), []);
+  const [ready, setReady] = useState(false);
   const bgMode = useStore((s) => s.bgMode);
   const watching = useStore((s) => s.interactionMode === 'watch');
   const wholeView = useStore((s) => s.view === 'whole' || s.interactionMode === 'watch');
   return (
-    <Canvas
+    <StartupContext.Provider value={startup}><Canvas
       shadows
       dpr={[1, 2]}
       camera={{ fov: 30, position: [320, 230, 760], near: 1, far: 30000 }}
-      gl={{ antialias: true, preserveDrawingBuffer: true }}
+      gl={{ antialias: true, preserveDrawingBuffer: true, toneMapping: THREE.ACESFilmicToneMapping, toneMappingExposure: 1, outputColorSpace: THREE.SRGBColorSpace }}
       onCreated={(state) => {
+        photoSource.current = { scene: state.scene, camera: state.camera, renderer: state.gl };
         void import('../export/exportPng').then((m) => {
           m.glRef.current = state.gl;
         });
@@ -930,28 +1061,22 @@ export function CueScene({ tpl }: { tpl: CueTemplate }) {
       }}
     >
       <color attach="background" args={[BG_COLORS[bgMode]]} />
-      <ambientLight intensity={0.3} />
-      <hemisphereLight intensity={0.28} color="#e2e8f2" groundColor="#4c4238" />
-      <directionalLight position={[500, 800, 700]} intensity={0.55} />
-      <directionalLight position={[-450, 220, -380]} intensity={0.3} />
-      <Environment resolution={512}>
-        {/* 主顶光：大面积柔光箱 */}
-        <Lightformer form="rect" intensity={2.1} position={[0, 420, 260]} scale={[620, 220, 1]} />
-        {/* 两条长条侧光：形成柔和的纵向条形反射 */}
-        <Lightformer form="rect" intensity={1.5} position={[-320, 160, 320]} rotation-y={Math.PI / 4.2} scale={[760, 70, 1]} />
-        <Lightformer form="rect" intensity={1.2} position={[340, 110, 260]} rotation-y={-Math.PI / 4} scale={[760, 56, 1]} />
-        {/* 背部轮廓光 */}
-        <Lightformer form="rect" intensity={0.9} position={[60, 140, -420]} rotation-y={Math.PI} scale={[520, 160, 1]} />
-        {/* 底部补光 */}
-        <Lightformer form="circle" intensity={0.5} position={[0, -260, 220]} scale={240} />
-      </Environment>
+      <ambientLight intensity={0.08} />
+      <hemisphereLight intensity={0.16} color="#f4f3ed" groundColor="#514b43" />
+      <directionalLight position={[280, 650, 480]} intensity={0.65} color="#fff8ef" />
+      <directionalLight position={[-400, 160, -380]} intensity={0.18} color="#edf2f5" />
+      {/* Axial fill keeps both end faces lit when looking along the cue. */}
+      <directionalLight position={[1600, 360, 520]} intensity={0.35} color="#fff8ef" />
+      <directionalLight position={[-1500, 240, 400]} intensity={0.25} color="#edf2f5" />
+      <StudioEnvironment />
       <CueGroup tpl={tpl} />
       {!watching && <GhostSticker />}
       {!watching && <StickerOverlay tpl={tpl} />}
-      <ContactShadows position={[0, -26, 0]} scale={1900} blur={2.8} opacity={0.32} far={120} />
+      <ContactShadows position={[0, -26, 0]} scale={1900} blur={2.4} opacity={0.25} far={120} />
       <OrbitControls
         makeDefault
         enableDamping
+        rotateSpeed={0.35}
         dampingFactor={0.12}
         enablePan={wholeView}
         screenSpacePanning
@@ -960,8 +1085,9 @@ export function CueScene({ tpl }: { tpl: CueTemplate }) {
         minPolarAngle={wholeView ? 0 : 0.25}
         maxPolarAngle={wholeView ? Math.PI : Math.PI / 1.75}
       />
-      <CameraRig tpl={tpl} />
+      <StartupWarmup startup={startup} onReady={() => { setReady(true); onReady?.(); }} />
+      <CameraRig tpl={tpl} ready={ready} />
       {import.meta.env.DEV && <FpsMeter />}
-    </Canvas>
+    </Canvas></StartupContext.Provider>
   );
 }

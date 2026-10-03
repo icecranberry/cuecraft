@@ -68,7 +68,7 @@ export default function App() {
   }, []);
 
   if (!loaded) {
-    return <div className="flex h-screen items-center justify-center text-sm text-ink-400">载入中…</div>;
+    return <div className="scene-loading-mask" role="status" aria-live="polite">载入中…</div>;
   }
 
   return (

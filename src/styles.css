@@ -268,3 +268,5 @@
 .tool-ring-option .studio-checkbox{min-height:30px;padding:4px 10px}
 @media(max-width:640px){.tool-ring-option .studio-checkbox{min-height:38px}.preview-tools-row:has(.tool-ring-option){flex-wrap:wrap;overflow:visible}}
 @media(prefers-reduced-motion:reduce){.studio-checkbox{transition:none}}
+
+.scene-loading-mask{position:fixed;inset:0;z-index:1000;display:grid;place-items:center;background:#e8eae2;color:#6c7b60;font-size:14px}

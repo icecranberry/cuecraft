@@ -19,6 +19,15 @@ export interface MaterialPreset {
   };
   metalness?: number;
   roughness?: number;
+  /** Native surfaces (ferrule, leather, linen, tip) do not inherit decorative lacquer. */
+  lacquer?: boolean;
+  surfaceName?: string;
+  surfaceTexture?: {
+    kind: 'leather' | 'linen' | 'tip' | 'turned-metal';
+    tileMm: number;
+    normalStrength: number;
+  };
+  anisotropy?: number;
 }
 
 export const MATERIAL_PRESETS: MaterialPreset[] = [
@@ -26,13 +35,14 @@ export const MATERIAL_PRESETS: MaterialPreset[] = [
   { id: 'maple', name: '枫木', type: 'wood', color: '#e6d3ac', woodTexture: { id: 'maple', sizeMm: 600, horizontal: true, normalStrength: 0.32, coatNormalStrength: 0.045 } },
   { id: 'ebony', name: '乌木（深色）', type: 'wood', color: '#2f271f', woodTexture: { id: 'ebony', sizeMm: 700, horizontal: true, normalStrength: 0.4, coatNormalStrength: 0.06, tint: '#596570' } },
   { id: 'rosewood', name: '红木', type: 'wood', color: '#6b3a26', woodTexture: { id: 'rosewood', sizeMm: 850, horizontal: false, normalStrength: 0.45, coatNormalStrength: 0.065 } },
-  { id: 'stainless', name: '不锈钢', type: 'metal', color: '#c9ccd2', metalness: 1, roughness: 0.3 },
-  { id: 'brass', name: '黄铜', type: 'metal', color: '#c8a44e', metalness: 1, roughness: 0.32 },
-  { id: 'blackmetal', name: '黑金（电镀）', type: 'metal', color: '#2a2a2e', metalness: 1, roughness: 0.22 },
-  { id: 'leather', name: '皮革握把', type: 'leather', color: '#4a3327', roughness: 0.72 },
-  { id: 'irishWrap', name: '亚麻缠线', type: 'leather', color: '#7a6a54', roughness: 0.8 },
-  { id: 'ivory', name: '尼龙白（先角）', type: 'solid', color: '#efe9dc', roughness: 0.25 },
-  { id: 'tipLeather', name: '皮头（蓝）', type: 'leather', color: '#3d5aa8', roughness: 0.85 },
+  { id: 'stainless', name: '不锈钢', type: 'metal', color: '#c9ccd2', metalness: 1, roughness: 0.28, anisotropy: 0.25, surfaceName: '精细车削面', surfaceTexture: { kind: 'turned-metal', tileMm: 6, normalStrength: 0.22 } },
+  { id: 'brass', name: '黄铜', type: 'metal', color: '#c8a44e', metalness: 1, roughness: 0.3, anisotropy: 0.2, surfaceName: '精细车削面', surfaceTexture: { kind: 'turned-metal', tileMm: 6, normalStrength: 0.18 } },
+  { id: 'blackmetal', name: '黑金（电镀）', type: 'metal', color: '#2a2a2e', metalness: 1, roughness: 0.24, surfaceName: '细磨电镀面', surfaceTexture: { kind: 'turned-metal', tileMm: 6, normalStrength: 0.12 } },
+  { id: 'leather', name: '皮革握把', type: 'leather', color: '#4a3327', roughness: 0.72, lacquer: false, surfaceName: '皮革自然柔光', surfaceTexture: { kind: 'leather', tileMm: 12, normalStrength: 0.5 } },
+  { id: 'irishWrap', name: '亚麻缠线', type: 'leather', color: '#7a6a54', roughness: 0.86, lacquer: false, surfaceName: '亚麻纤维面', surfaceTexture: { kind: 'linen', tileMm: 12, normalStrength: 0.6 } },
+  { id: 'ivory', name: '尼龙白（先角）', type: 'solid', color: '#efe9dc', roughness: 0.34, lacquer: false, surfaceName: '细磨尼龙面' },
+  { id: 'tipLeather', name: '皮头（蓝）', type: 'leather', color: '#3d5aa8', roughness: 0.92, lacquer: false, surfaceName: '压实皮革面', surfaceTexture: { kind: 'tip', tileMm: 6, normalStrength: 0.35 } },
+  { id: 'rubber', name: '橡胶尾帽', type: 'solid', color: '#282a29', metalness: 0, roughness: 0.82, lacquer: false, surfaceName: '橡胶自然柔光', surfaceTexture: { kind: 'tip', tileMm: 6, normalStrength: 0.18 } },
   { id: 'whiteSolid', name: '纯色（白）', type: 'solid', color: '#f2f2ee', roughness: 0.3 },
   { id: 'redSolid', name: '纯色（酒红）', type: 'solid', color: '#7c2230', roughness: 0.3 },
   { id: 'blackSolid', name: '纯色（黑）', type: 'solid', color: '#141414', roughness: 0.3 }
@@ -40,6 +50,10 @@ export const MATERIAL_PRESETS: MaterialPreset[] = [
 
 export function presetById(id: string): MaterialPreset {
   return MATERIAL_PRESETS.find((p) => p.id === id) ?? MATERIAL_PRESETS[0];
+}
+
+export function supportsLacquer(preset: MaterialPreset): boolean {
+  return preset.lacquer ?? (preset.type === 'wood' || preset.type === 'solid');
 }
 
 export interface FinishPreset {
@@ -52,9 +66,9 @@ export interface FinishPreset {
 
 // 漆面预设（plan.md §5.3）：切换漆面只改反射表现，不触发生图、不改印刷内容。
 export const FINISHES: FinishPreset[] = [
-  { id: 'gloss', name: '亮光清漆', roughness: 0.2, clearcoat: 0.9, clearcoatRoughness: 0.12 },
-  { id: 'semi', name: '半哑光清漆', roughness: 0.36, clearcoat: 0.5, clearcoatRoughness: 0.36 },
-  { id: 'matte', name: '哑光清漆', roughness: 0.62, clearcoat: 0.08, clearcoatRoughness: 0.62 }
+  { id: 'gloss', name: '亮光清漆', roughness: 0.32, clearcoat: 0.88, clearcoatRoughness: 0.16 },
+  { id: 'semi', name: '半哑光清漆', roughness: 0.42, clearcoat: 0.45, clearcoatRoughness: 0.3 },
+  { id: 'matte', name: '哑光清漆', roughness: 0.62, clearcoat: 0.08, clearcoatRoughness: 0.54 }
 ];
 
 export function finishById(id: FinishId): FinishPreset {

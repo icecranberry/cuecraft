@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { CUE_TEMPLATES, expandedSegments, radiusAt, resolveTemplate } from '../cue/templates';
-import { buildSegmentGeometry } from '../cue/geometry';
+import { buildSegmentGeometry, lathePoint, surfaceNormal } from '../cue/geometry';
+import * as THREE from 'three';
 import { latheUvToSurface, stickerLocalPoint, pointInRect, angDelta, moveStickerTo, pickSticker, normAngle } from '../cue/mapping';
 import { buildUnfoldTemplate, mmToPx, sheetPixels, stickerPosInBlock } from '../cue/unwrap';
 import { autoRemoveWhiteBg, effectivePpi, featherAlpha, type Img } from '../editor/cutout';
@@ -79,6 +80,27 @@ describe('杆型模板', () => {
 });
 
 describe('表面映射', () => {
+  it('锥面法线垂直于实际曲面的轴向与环向切线', () => {
+    for (const seg of expandedSegments(tpl)) {
+      const a = (seg.a0 + seg.a1) / 2;
+      for (const ang of [0, 0.7, Math.PI, Math.PI * 1.8]) {
+        const normal = surfaceNormal(seg, a, ang);
+        const axial = lathePoint(seg, a + 0.001, ang).sub(lathePoint(seg, a - 0.001, ang)).normalize();
+        const around = lathePoint(seg, a, ang + 0.001).sub(lathePoint(seg, a, ang - 0.001)).normalize();
+        expect(normal.dot(axial)).toBeCloseTo(0, 8);
+        expect(normal.dot(around)).toBeCloseTo(0, 8);
+        expect(normal.length()).toBeCloseTo(1, 8);
+      }
+      const geometry = buildSegmentGeometry(seg);
+      const positions = geometry.getAttribute('position'), normals = geometry.getAttribute('normal');
+      for (let i = 0; i < positions.count; i += 17) {
+        const expected = surfaceNormal(seg, positions.getX(i), Math.atan2(positions.getZ(i), positions.getY(i)));
+        expect(new THREE.Vector3().fromBufferAttribute(normals, i).distanceTo(expected)).toBeLessThan(1e-6);
+      }
+      geometry.dispose();
+    }
+  });
+
   it('uv→表面坐标→角度还原一致', () => {
     const seg = expandedSegments(tpl)[2];
     const hit = latheUvToSurface(seg, 0.25, 0.5);

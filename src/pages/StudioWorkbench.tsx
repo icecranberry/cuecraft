@@ -7,6 +7,7 @@ import { expandedSegments, resolveTemplate } from '../cue/templates';
 import { useStore } from '../state/store';
 import { saveCurrentProduct, uploadDesignImages } from '../state/designActions';
 import { exportRenderShot } from '../export/exportPng';
+import type { PhotoFrame } from '../export/renderPhoto';
 import { Button, Dialog } from '../ui/components';
 import type { CueTemplate } from '../core/types';
 import { PreviewTools } from './PreviewTools';
@@ -15,6 +16,7 @@ import { LayersTab } from './panels';
 import { ExportDialog, UnfoldCheckDialog, VersionsDialog } from './Workbench';
 
 export function Workbench() {
+  const [sceneReady, setSceneReady] = useState(false);
   const design = useStore((s) => s.design);
   const tpl = useMemo(() => resolveTemplate(design.cueTemplateId, design.decorativeRings, design.partOverrides), [design.cueTemplateId, design.decorativeRings, design.partOverrides['ring-joint']?.ringEnabled, design.partOverrides['ring-deco']?.ringEnabled]);
   const selection = useStore((s) => s.selection);
@@ -31,6 +33,28 @@ export function Workbench() {
     transitionUI(() => [railRef.current], next === 'layers' ? 1 : -1, () => setRailTab(next));
   };
   const [help, setHelp] = useState(false);
+  const [photo, setPhoto] = useState<{ url: string; name: string } | null>(null);
+  const [photoOpen, setPhotoOpen] = useState(false);
+  const [photoFrame, setPhotoFrame] = useState<PhotoFrame>('current');
+  const [photoSize, setPhotoSize] = useState<2048 | 3840>(3840);
+  const [renderingPhoto, setRenderingPhoto] = useState(false);
+  const downloadPhoto = async () => {
+    if (renderingPhoto) return;
+    setRenderingPhoto(true);
+    const name = `${useStore.getState().design.name}.png`;
+    try {
+      const blob = await exportRenderShot(name, { frame: photoFrame, size: photoSize });
+      if (blob) {
+        const url = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result as string);
+          reader.onerror = () => reject(new Error('图片预览未能读取'));
+          reader.readAsDataURL(blob);
+        });
+        setPhoto({ url, name });
+      }
+    } finally { setRenderingPhoto(false); }
+  };
   const [tipVisible, setTipVisible] = useState(true);
   useEffect(() => {
     if (generateOpen) {
@@ -43,6 +67,7 @@ export function Workbench() {
   const partId = selection.kind === 'part' ? selection.id : selectedSticker?.target.kind === 'lathe' ? selectedSticker.target.segId : selectedSticker?.target.faceId;
   const name = expandedSegments(resolveTemplate(tpl.id)).find((p) => p.id === partId)?.name ?? tpl.faces.find((p) => p.id === partId)?.name;
   return <div className="studio">
+    {!sceneReady && <div className="scene-loading-mask" role="status" aria-live="polite"><span>载入中…</span></div>}
     <div className="studio-heading">
       <div><div className="eyebrow">YOUR CUE, YOUR SIGNATURE</div><h1>设计你的专属球杆<span className="heading-dot">.</span></h1><p>选好部位，说出灵感，看看它上杆的样子。</p></div>
       <div className="heading-actions"><button className="help-button" onClick={() => setHelp(true)}><CircleHelp size={17} /> 使用帮助</button><Button variant="outline" onClick={saveCurrentProduct}><Save size={16} /> 保存设计</Button></div>
@@ -50,11 +75,11 @@ export function Workbench() {
     <div className="studio-layout">
       <PartNavigator tpl={tpl} selectedId={partId} />
       <section className="preview-panel" aria-label="球杆实时预览">
-        <div className="preview-toolbar"><div className="preview-title"><span className="live-dot" /><strong>实时预览</strong><span>大头杆</span></div><div className="preview-actions"><HistoryControls /><details className="download-menu"><summary aria-label="下载与历史记录"><Download size={17} /><ChevronDown size={12} /></summary><div className="menu-popover"><button onClick={(e) => { exportRenderShot(`${useStore.getState().design.name}.png`); e.currentTarget.closest('details')?.removeAttribute('open'); }}>下载效果图</button><button disabled={watching} onClick={(e) => { useStore.getState().set({ versionsOpen: true }); e.currentTarget.closest('details')?.removeAttribute('open'); }}><History size={16} /> 查看历史版本</button><button onClick={(e) => { useStore.getState().set({ exportOpen: true }); e.currentTarget.closest('details')?.removeAttribute('open'); }}>导出工厂文件</button></div></details></div></div>
+        <div className="preview-toolbar"><div className="preview-title"><span className="live-dot" /><strong>实时预览</strong><span>大头杆</span></div><div className="preview-actions"><HistoryControls /><details className="download-menu"><summary aria-label="下载与历史记录"><Download size={17} /><ChevronDown size={12} /></summary><div className="menu-popover"><button onClick={(e) => { setPhotoOpen(true); e.currentTarget.closest('details')?.removeAttribute('open'); }}>下载效果图</button><button disabled={watching} onClick={(e) => { useStore.getState().set({ versionsOpen: true }); e.currentTarget.closest('details')?.removeAttribute('open'); }}><History size={16} /> 查看历史版本</button><button onClick={(e) => { useStore.getState().set({ exportOpen: true }); e.currentTarget.closest('details')?.removeAttribute('open'); }}>导出工厂文件</button></div></details></div></div>
         <div className="preview-workspace">
         <div className="preview-stage">
           <div className="stage-watermark" aria-hidden="true">MADE BY YOU</div>
-          <div className="stage-canvas"><CueScene tpl={tpl} /></div>
+          <div className="stage-canvas" aria-busy={!sceneReady}><CueScene tpl={tpl} onReady={() => setSceneReady(true)} /></div>
           <div className="stage-label"><span>CUE / 01</span><p>你的设计，正在这里发生</p></div>
           {tipVisible && !partId && <div className="stage-tip"><MousePointer2 size={17} /><span>拖动空白处旋转球杆<br /><small>{watching || view === 'whole' ? '滚轮缩放，右键拖动平移，自由旋转' : '滚动鼠标可放大，双击部位可聚焦'}</small></span><button aria-label="收起操作提示" onClick={() => setTipVisible(false)}><X size={15} /></button></div>}
           {name && <div className="selected-part-note"><span>已选中 · {name}</span><button aria-label="取消部位选择" onClick={() => useStore.getState().select({ kind: 'global' })}><X size={14} /></button></div>}
@@ -87,6 +112,14 @@ export function Workbench() {
       </aside>
     </div>
     <ExportDialog tpl={tpl} /><UnfoldCheckDialog tpl={tpl} /><VersionsDialog tpl={tpl} />
+    <Dialog open={photoOpen} onClose={() => setPhotoOpen(false)} title="高清效果图">
+      <div style={{ display: 'flex', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
+        <label>画面 <select aria-label="效果图视角" value={photoFrame} onChange={(e) => setPhotoFrame(e.target.value as PhotoFrame)}><option value="current">当前视角</option><option value="whole">整杆</option><option value="butt">后把</option><option value="joint">接头细节</option><option value="tip">皮头细节</option><option value="tail">尾帽细节</option></select></label>
+        <label>清晰度 <select aria-label="效果图清晰度" value={photoSize} onChange={(e) => setPhotoSize(Number(e.target.value) as 2048 | 3840)}><option value="2048">2K</option><option value="3840">4K</option></select></label>
+        <Button disabled={renderingPhoto} onClick={() => void downloadPhoto()}>{renderingPhoto ? '正在生成…' : '生成并下载'}</Button>
+      </div>
+      {photo && <div><img src={photo.url} alt="球杆高清效果图" style={{ width: '100%', display: 'block', borderRadius: 12 }} /><p>图片已去除选中标记与操作提示。</p><a href={photo.url} download={photo.name}>保存 PNG 图片</a></div>}
+    </Dialog>
     <Dialog open={help} onClose={() => setHelp(false)} title="第一次设计？从这三步开始">
       <div className="help-content"><ol><li><strong>选部位</strong><p>选择「前后呼应」，把纹样应用到前臂和尾段。想改某一处，选「只改一处」。</p></li><li><strong>选纹样</strong><p>在「纹样选料」中搜索和选择系统内置图案，直接放上球杆。也可以切换到 AI 设计，或上传自己的图片。</p></li><li><strong>看效果</strong><p>生成后点「用这套」，图案就会上杆。满意后保存设计，随时能在「我的作品」里继续编辑。</p></li></ol><p>改错了？预览区的「撤销」能回退。图层在右侧「图层」页签管理，尺寸和剪切工具在预览下方。设计模式下点击左侧「查看整杆」可调整整体底色和漆面；切换「观看」可自由查看，避免误编辑。</p><Button variant="primary" className="w-full" onClick={() => setHelp(false)}>明白了，开始设计</Button></div>
     </Dialog>
@@ -100,7 +133,7 @@ export function Workbench() {
 function PartNavigator({ tpl, selectedId }: { tpl: CueTemplate; selectedId?: string }) {
   const view = useStore((s) => s.view);
   const watching = useStore((s) => s.interactionMode === 'watch');
-  const parts = [...expandedSegments(resolveTemplate(tpl.id)), ...tpl.faces];
+  const parts = [...expandedSegments(resolveTemplate(tpl.id)), ...tpl.faces.filter((face) => face.id !== 'face-butt')];
   return <aside {...(watching ? { inert: '' } : {})} aria-disabled={watching} className="part-navigator" aria-label="球杆部位选择">
     <header><h2>球杆部位</h2><p>点击选择并聚焦</p></header>
     <button className="part-overview" aria-pressed={!selectedId && view === 'whole'} onClick={() => {

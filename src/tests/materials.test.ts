@@ -4,8 +4,101 @@ import { createCueMaterial } from '../materials/factory';
 import { MATERIAL_PRESETS, presetById } from '../materials/presets';
 import { presetTextures, type PresetTextures } from '../materials/textures';
 import { woodTransform } from '../materials/woodMapping';
+import { generateSurfaceTile } from '../materials/surfaceTextures';
 
 afterEach(() => vi.restoreAllMocks());
+
+describe('part surface finishes', () => {
+  const make = (id: string, finishId: 'gloss' | 'semi' | 'matte' = 'gloss') => createCueMaterial({
+    preset: presetById(id), finishId, circMm: 80, lenMm: 202
+  });
+
+  it.each(['brass', 'blackmetal', 'stainless', 'ivory', 'whiteSolid', 'redSolid', 'blackSolid'])('%s uses its own base color without a user override', (id) => {
+    const handle = make(id);
+    expect(handle.material.color.getHexString()).toBe(presetById(id).color.slice(1));
+    handle.dispose();
+  });
+
+  it.each(['brass', 'redSolid', 'ivory'])('%s preserves existing custom color overrides', (id) => {
+    const handle = createCueMaterial({ preset: presetById(id), finishId: 'gloss', circMm: 80, lenMm: 202, colorOverride: '#305070' });
+    expect(handle.material.color.getHexString()).toBe('305070');
+    handle.dispose();
+  });
+
+  it.each(['leather', 'irishWrap', 'tipLeather', 'ivory', 'stainless'])('%s preserves its native finish across global lacquer changes', (id) => {
+    const handles = (['gloss', 'semi', 'matte'] as const).map((finish) => make(id, finish));
+    for (const { material } of handles) {
+      expect(material.clearcoat).toBe(0);
+      expect(material.roughness).toBe(presetById(id).roughness);
+    }
+    handles.forEach((handle) => handle.dispose());
+  });
+
+  it('painted solids respond to gloss, semi and matte instead of keeping a fixed roughness', () => {
+    const handles = (['gloss', 'semi', 'matte'] as const).map((finish) => make('redSolid', finish));
+    expect(handles[0].material.roughness).toBeLessThan(handles[1].material.roughness);
+    expect(handles[1].material.roughness).toBeLessThan(handles[2].material.roughness);
+    expect(handles[0].material.clearcoat).toBeGreaterThan(handles[2].material.clearcoat);
+    handles.forEach((handle) => handle.dispose());
+  });
+
+  it('front wood has a restrained seal while the butt keeps the selected lacquer', async () => {
+    vi.spyOn(THREE.TextureLoader.prototype, 'loadAsync').mockImplementation(async () => new THREE.Texture());
+    const preset = { ...presetById('maple'), id: 'test-shaft-finish' };
+    const shaft = createCueMaterial({ preset, finishId: 'gloss', circMm: 60, lenMm: 708, partKind: 'shaft' });
+    const butt = createCueMaterial({ preset, finishId: 'gloss', circMm: 80, lenMm: 384, partKind: 'butt' });
+    await presetTextures(preset).ready;
+    expect(shaft.material.clearcoat).toBeLessThan(butt.material.clearcoat);
+    expect(shaft.material.roughness).toBeGreaterThan(butt.material.roughness);
+    shaft.dispose(); butt.dispose();
+  });
+
+  it('surface maps have independent transforms and fixed axial millimeter density, including short rings', () => {
+    const preset = presetById('brass');
+    const ring = createCueMaterial({ preset, finishId: 'gloss', circMm: 80, lenMm: 2, axialOriginMm: 20 });
+    const next = createCueMaterial({ preset, finishId: 'gloss', circMm: 80, lenMm: 12, axialOriginMm: 22 });
+    expect(ring.material.map).toBeNull();
+    expect(ring.material.normalMap).not.toBeNull();
+    expect(ring.material.normalMap!.repeat.y * 6).toBeCloseTo(2);
+    expect(ring.material.normalMap!.offset.y + ring.material.normalMap!.repeat.y).toBeCloseTo(next.material.normalMap!.offset.y);
+    expect(ring.material.normalMap!.repeat.toArray()).toEqual(ring.material.roughnessMap!.repeat.toArray());
+    expect(ring.material.normalMap).not.toBe(next.material.normalMap);
+    expect(ring.material.normalMap!.source).toBe(next.material.normalMap!.source);
+    const shared = vi.spyOn(presetTextures(preset).normalMap!, 'dispose');
+    ring.dispose(); next.dispose();
+    expect(shared).not.toHaveBeenCalled();
+  });
+
+  it('leather, linen and tip have distinct surface data and correctly tagged color/data maps', () => {
+    const textures = ['leather', 'irishWrap', 'tipLeather'].map((id) => presetTextures(presetById(id)));
+    for (const tex of textures) {
+      expect(tex.map!.colorSpace).toBe(THREE.SRGBColorSpace);
+      expect(tex.normalMap!.colorSpace).toBe(THREE.NoColorSpace);
+      expect(tex.roughnessMap!.colorSpace).toBe(THREE.NoColorSpace);
+      expect(tex.normalMap!.generateMipmaps).toBe(true);
+    }
+    const pixels = textures.map((tex) => (tex.normalMap!.image as { data: Uint8Array }).data);
+    expect(pixels[0]).not.toEqual(pixels[1]);
+    expect(pixels[0]).not.toEqual(pixels[2]);
+    expect(pixels[1]).not.toEqual(pixels[2]);
+  });
+
+  it.each(['leather', 'linen', 'tip', 'turned-metal'] as const)('%s produces finite unit normals without open seams', (kind) => {
+    const tile = generateSurfaceTile(kind, 512);
+    const edgeDelta: number[] = [], interiorDelta: number[] = [];
+    for (let y = 0; y < tile.size; y += 7) {
+      edgeDelta.push(Math.abs(tile.color[y * tile.size * 4] - tile.color[(y * tile.size + tile.size - 1) * 4]));
+      for (let x = 1; x < tile.size; x += 7) {
+        const i = (y * tile.size + x) * 4;
+        const n = [tile.normal[i], tile.normal[i + 1], tile.normal[i + 2]].map((value) => value / 255 * 2 - 1);
+        expect(Math.hypot(...n)).toBeCloseTo(1, 1);
+        interiorDelta.push(Math.abs(tile.color[i] - tile.color[i - 4]));
+      }
+    }
+    const mean = (values: number[]) => values.reduce((a, b) => a + b, 0) / values.length;
+    expect(mean(edgeDelta)).toBeLessThanOrEqual(mean(interiorDelta) * 3 + 1);
+  });
+});
 
 describe('scanned wood materials', () => {
   it.each(['ash', 'maple', 'ebony', 'rosewood'])('%s keeps equal grain scale around and along the cue, with continuous axial sampling', (id) => {
@@ -54,9 +147,14 @@ describe('scanned wood materials', () => {
     const current = make(350);
     const ring = make(5);
     const colorBefore = current.material.color.getHexString();
+    let materialReady = false;
+    void current.ready.then(() => { materialReady = true; });
+    await Promise.resolve();
+    expect(materialReady).toBe(false);
     old.dispose();
     pending.forEach((resolve) => resolve(new THREE.Texture()));
-    await presetTextures(preset).ready;
+    await current.ready;
+    expect(materialReady).toBe(true);
     expect(loader).toHaveBeenCalledTimes(3);
     expect(old.material.map).toBeNull();
     expect(current.material.map).not.toBeNull();
@@ -92,7 +190,7 @@ describe('scanned wood materials', () => {
     const preset = { ...presetById('maple'), id: 'test-failed-maple' };
     const handle = createCueMaterial({ preset, finishId: 'gloss', circMm: 80, lenMm: 700 });
     const base: PresetTextures = presetTextures(preset);
-    await base.ready;
+    await handle.ready;
     expect(handle.material.map).toBeNull();
     expect(handle.material.color.getHexString()).toBe(preset.color.slice(1));
     expect(dispose).toHaveBeenCalledOnce();

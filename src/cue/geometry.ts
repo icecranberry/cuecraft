@@ -14,9 +14,8 @@ export function lathePoint(seg: SegmentSpec, a: number, ang: number): THREE.Vect
 
 export function surfaceNormal(seg: SegmentSpec, a: number, ang: number): THREE.Vector3 {
   const dr = (seg.r1 - seg.r0) / Math.max(1e-6, seg.a1 - seg.a0);
-  const f = seg.a1 === seg.a0 ? 0 : (a - seg.a0) / (seg.a1 - seg.a0);
-  const r = seg.r0 + (seg.r1 - seg.r0) * f;
-  const n = new THREE.Vector3(-r * dr, Math.cos(ang), Math.sin(ang));
+  // Orthogonal to both (1, dr*cos(ang), dr*sin(ang)) and the circumferential tangent.
+  const n = new THREE.Vector3(-dr, Math.cos(ang), Math.sin(ang));
   return n.normalize();
 }
 
@@ -39,7 +38,7 @@ export function buildSegmentGeometry(seg: SegmentSpec): THREE.BufferGeometry {
       const u = j / nR;
       const ang = u * Math.PI * 2;
       positions.push(a, r * Math.cos(ang), r * Math.sin(ang));
-      const n = new THREE.Vector3(-r * dr, Math.cos(ang), Math.sin(ang)).normalize();
+      const n = new THREE.Vector3(-dr, Math.cos(ang), Math.sin(ang)).normalize();
       normals.push(n.x, n.y, n.z);
       uvs.push(u, f);
     }

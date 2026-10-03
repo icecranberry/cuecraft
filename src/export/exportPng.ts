@@ -152,15 +152,17 @@ export async function previewUnfold(
 }
 
 /** 产品效果图（可选辅助文件，独立于生产 PNG，plan §7.3） */
-export function exportRenderShot(fileName: string) {
-  const gl = glRef.current;
-  if (!gl) {
-    useStore.getState().showToast('渲染器未就绪');
-    return;
+export async function exportRenderShot(fileName: string, options: import('./renderPhoto').PhotoOptions = {}) {
+  useStore.getState().showToast('正在生成高清效果图…');
+  try {
+    const { renderPhoto } = await import('./renderPhoto');
+    const blob = await renderPhoto(options);
+    downloadBlob(blob, fileName);
+    useStore.getState().showToast('高清效果图已生成');
+    return blob;
+  } catch (error) {
+    useStore.getState().showToast(error instanceof Error ? error.message : '效果图生成失败，请重试');
   }
-  gl.domElement.toBlob((blob) => {
-    if (blob) downloadBlob(blob, fileName);
-  }, 'image/png');
 }
 
 export const glRef: { current: { domElement: HTMLCanvasElement } | null } = { current: null };

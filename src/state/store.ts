@@ -14,6 +14,7 @@ import type {
 import { get as idbGet, set as idbSet } from 'idb-keyval';
 import { putBlob, removeBlob } from './imageStore';
 import { resolveTemplate } from '../cue/templates';
+import { appearancePartId } from '../cue/partAppearance';
 import { mergeBuiltinPatterns } from '../materials/patterns';
 
 // 应用状态（plan.md §3/§9）：设计数据、选择、历史、UI 与库数据。
@@ -212,12 +213,16 @@ export const useStore = create<Store>((set, get) => ({
     set((s) => ({ design: { ...s.design, name } }));
   },
   setPartOverride(segId, o) {
-    set((s) => ({
-      design: {
-        ...s.design,
-        partOverrides: { ...s.design.partOverrides, [segId]: { ...s.design.partOverrides[segId], ...o } }
+    segId = appearancePartId(segId);
+    set((s) => {
+      const partOverrides = { ...s.design.partOverrides, [segId]: { ...s.design.partOverrides[segId], ...o } };
+      if ((segId === 'joint' || segId === 'ring-joint') && o.matPreset) {
+        for (const id of ['joint', 'ring-joint']) {
+          partOverrides[id] = { ...partOverrides[id], matPreset: o.matPreset === 'stainless' ? 'stainless' : 'brass', color: undefined };
+        }
       }
-    }));
+      return { design: { ...s.design, partOverrides } };
+    });
   },
   setDecorativeRings(enabled) {
     if ((get().design.decorativeRings !== false) === enabled) return;
@@ -229,6 +234,7 @@ export const useStore = create<Store>((set, get) => ({
     }));
   },
   clearPartOverride(segId) {
+    segId = appearancePartId(segId);
     get().pushHistory();
     set((s) => {
       const po = { ...s.design.partOverrides };
@@ -309,10 +315,12 @@ export const useStore = create<Store>((set, get) => ({
   },
 
   select(sel) {
+    if (sel.kind === 'part' && sel.id) sel = { ...sel, id: appearancePartId(sel.id) };
     set({ selection: sel });
   },
   /** 选中部件并动画聚焦到画面中心（部件列表 / 双击共用） */
   focusPart(partId: string) {
+    partId = appearancePartId(partId);
     set((s) => ({ selection: { kind: 'part', id: partId }, view: 'focus', focusPartId: partId, viewNonce: s.viewNonce + 1 }));
   },
   setPlacementAsset(id) {

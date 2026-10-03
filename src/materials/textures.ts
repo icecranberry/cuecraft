@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import type { MaterialPreset } from './presets';
 
-// 程序化底材纹理：木材／皮革平铺贴片，环绕与轴向双方向无缝（周期化噪声）。
+// 木材使用本地 CC0 扫描素材，皮革保留程序化贴片。
 // 颜色贴图 sRGB，法线为数据贴图（plan.md §5.4 颜色管理）。
 
 const TILE = 512;
@@ -11,88 +11,6 @@ function makeCanvas(size = TILE) {
   c.width = size;
   c.height = size;
   return c;
-}
-
-/** 双向周期化值噪声：px/py 为整格周期 */
-function periodicNoise(seed: number, px: number, py: number) {
-  const perm = new Uint8Array(512);
-  let s = (seed >>> 0) || 1;
-  const rnd = () => ((s = (s * 1664525 + 1013904223) >>> 0) / 4294967296);
-  for (let i = 0; i < 256; i++) perm[i] = i;
-  for (let i = 255; i > 0; i--) {
-    const j = Math.floor(rnd() * (i + 1));
-    [perm[i], perm[j]] = [perm[j], perm[i]];
-  }
-  for (let i = 0; i < 256; i++) perm[256 + i] = perm[i];
-  const g = (ix: number, iy: number) => {
-    const x = ((ix % px) + px) % px;
-    const y = ((iy % py) + py) % py;
-    return perm[(perm[x & 255] + y) & 255] / 255;
-  };
-  const fade = (t: number) => t * t * (3 - 2 * t);
-  // 归一化：u,v ∈ [0,1) 映射到格点周期
-  return (u: number, v: number) => {
-    const x = u * px;
-    const y = v * py;
-    const xi = Math.floor(x);
-    const yi = Math.floor(y);
-    const xf = x - xi;
-    const yf = y - yi;
-    const a = g(xi, yi);
-    const b = g(xi + 1, yi);
-    const c = g(xi, yi + 1);
-    const d = g(xi + 1, yi + 1);
-    const uu = fade(xf);
-    const vv = fade(yf);
-    return a + (b - a) * uu + (c - a) * vv + (a - b - c + d) * uu * vv;
-  };
-}
-
-function hexToRgb(hex: string) {
-  const m = hex.replace('#', '');
-  const v = m.length === 3 ? m.split('').map((c) => c + c).join('') : m;
-  const n = parseInt(v, 16);
-  return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 };
-}
-
-/** 木材贴片：底色＋环绕方向木纹条带＋轴向延伸细纹（双向无缝） */
-function woodCanvas(preset: MaterialPreset): { color: HTMLCanvasElement; height: HTMLCanvasElement } {
-  const color = makeCanvas();
-  const height = makeCanvas();
-  const ctx = color.getContext('2d')!;
-  const hctx = height.getContext('2d')!;
-  const img = ctx.createImageData(TILE, TILE);
-  const him = hctx.createImageData(TILE, TILE);
-  const base = hexToRgb(preset.color);
-  const streak = hexToRgb(preset.grainColor ?? '#000000');
-  const warpN = periodicNoise(7, 4, 3);
-  const fineN = periodicNoise(23, 90, 2);
-  const blotchN = periodicNoise(51, 3, 6);
-  const BANDS = 13; // 每贴片环绕方向条带数（整数保证无缝）
-  for (let y = 0; y < TILE; y++) {
-    for (let x = 0; x < TILE; x++) {
-      const u = x / TILE;
-      const v = y / TILE;
-      const warp = (warpN(u, v) - 0.5) * 0.16;
-      const bandPos = u * BANDS + warp;
-      const bands = 0.5 + 0.5 * Math.sin(bandPos * Math.PI * 2);
-      const bandSharp = Math.pow(bands, 1.8);
-      const fine = fineN(u, v);
-      const blotch = (blotchN(u, v) - 0.5) * 0.1;
-      const t = Math.min(1, Math.max(0, bandSharp * 0.68 + fine * 0.34 + blotch));
-      const i = (y * TILE + x) * 4;
-      img.data[i] = base.r + (streak.r - base.r) * t;
-      img.data[i + 1] = base.g + (streak.g - base.g) * t;
-      img.data[i + 2] = base.b + (streak.b - base.b) * t;
-      img.data[i + 3] = 255;
-      const h = 130 + t * 80 + fine * 45;
-      him.data[i] = him.data[i + 1] = him.data[i + 2] = h;
-      him.data[i + 3] = 255;
-    }
-  }
-  ctx.putImageData(img, 0, 0);
-  hctx.putImageData(him, 0, 0);
-  return { color, height };
 }
 
 /** 皮革贴片：颗粒压痕（点以 3×3 平铺复制保证周期） */
@@ -159,6 +77,8 @@ function normalFromHeight(height: HTMLCanvasElement, strength = 1.4): HTMLCanvas
 export interface PresetTextures {
   map?: THREE.Texture;
   normalMap?: THREE.Texture;
+  roughnessMap?: THREE.Texture;
+  ready?: Promise<void>;
 }
 
 const cache = new Map<string, PresetTextures>();
@@ -168,9 +88,30 @@ export function presetTextures(preset: MaterialPreset): PresetTextures {
   const hit = cache.get(preset.id);
   if (hit) return hit;
   let tex: PresetTextures = {};
-  if (preset.type === 'wood') {
-    const { color, height } = woodCanvas(preset);
-    tex = { map: toTex(color), normalMap: toTex(normalFromHeight(height, 1.1)) };
+  if (preset.type === 'wood' && preset.woodTexture) {
+    const id = preset.woodTexture.id;
+    const loader = new THREE.TextureLoader();
+    const load = async (kind: string, colorSpace: THREE.ColorSpace = THREE.NoColorSpace) => {
+      const t = await loader.loadAsync(`${import.meta.env.BASE_URL}textures/wood/${id}-${kind}.jpg`);
+      t.wrapS = t.wrapT = THREE.RepeatWrapping;
+      t.anisotropy = 8;
+      t.colorSpace = colorSpace;
+      return t;
+    };
+    // Resolve even on failure: keep the solid fallback and allow a later retry.
+    // allSettled ensures successful members can be released if one map fails.
+    tex.ready = Promise.allSettled([
+      load('color', THREE.SRGBColorSpace), load('normal'), load('roughness')
+    ]).then((results) => {
+      if (results.some((r) => r.status === 'rejected')) {
+        results.forEach((r) => { if (r.status === 'fulfilled') r.value.dispose(); });
+        cache.delete(preset.id);
+        console.warn(`木材贴图加载失败：${preset.name}，暂用底色。`);
+        return;
+      }
+      const maps = results.map((r) => (r as PromiseFulfilledResult<THREE.Texture>).value);
+      [tex.map, tex.normalMap, tex.roughnessMap] = maps;
+    });
   } else if (preset.type === 'leather') {
     const { color, height } = leatherCanvas(preset);
     tex = { map: toTex(color), normalMap: toTex(normalFromHeight(height, 2.4)) };

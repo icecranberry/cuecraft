@@ -4,6 +4,15 @@ import { Children, isValidElement, useEffect, useRef, useState } from 'react';
 import * as SelectPrimitive from '@radix-ui/react-select';
 import { Check, ChevronDown, ChevronUp } from 'lucide-react';
 
+/** Native checkbox semantics, with the studio's compact field styling. */
+export function Checkbox({ label, className, ...props }: Omit<InputHTMLAttributes<HTMLInputElement>, 'type'> & { label: string }) {
+  return <label className={clsx('studio-checkbox', className)}>
+    <input {...props} type="checkbox" />
+    <span className="studio-checkbox-box" aria-hidden="true"><Check size={12} strokeWidth={2.5} /></span>
+    <span>{label}</span>
+  </label>;
+}
+
 export function Button({
   children,
   variant = 'default',

@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import type { FaceSpec, SegmentSpec, StickerInstance } from '../core/types';
-import { radiusAtSeg } from '../cue/mapping';
+import { radiusAtSeg, stickerExtent, stickerOverlapsSegment } from '../cue/mapping';
 import { blobToCanvas } from '../state/imageStore';
 
 // 印刷层合成（plan.md §4.3）：预览纹理、导出图层、展开检查共用同一绘制规则。
@@ -96,7 +96,8 @@ export function composeSegmentPrint(
   seg: SegmentSpec,
   stickers: StickerInstance[],
   qualityPpm: number,
-  maxDim = 4096
+  maxDim = 4096,
+  segments: SegmentSpec[] = [seg]
 ): { canvas: HTMLCanvasElement; ppm: number } {
   const lenMm = seg.a1 - seg.a0;
   const rMid = (seg.r0 + seg.r1) / 2;
@@ -106,24 +107,40 @@ export function composeSegmentPrint(
   canvas.width = w;
   canvas.height = h;
   const ctx = canvas.getContext('2d')!;
-  const mine = stickers
-    .filter((s) => !s.hidden && s.target.kind === 'lathe' && s.target.segId === seg.id)
-    .sort((a, b) => a.z - b.z);
-  for (const s of mine) {
-    if (s.target.kind !== 'lathe') continue;
-    const img = imgCache.get(imageKey(s)) ?? null;
-    if (!img) continue;
-    const r = radiusAtSeg(seg, s.target.a);
-    const cx = ((((s.target.angDeg % 360) + 360) % 360) / 360) * (2 * Math.PI * r);
-    const cy = s.target.a - seg.a0;
-    const offs: number[] = [0];
-    if (cx < s.w / 2) offs.push(w / ppm);
-    if (cx > circMm - s.w / 2) offs.push(-w / ppm);
-    for (const off of offs) {
-      drawStickerMM(ctx, img, { x: cx + off, y: cy }, s, ppm);
-    }
-  }
+  if (seg.printEnabled) drawLatheStickers(ctx, stickers, segments, seg.a0, seg.a1, circMm, circMm, ppm);
   return { canvas, ppm };
+}
+
+/** Shared angular projection keeps a single sticker continuous across different radii. */
+export function drawLatheStickers(
+  ctx: CanvasRenderingContext2D, stickers: StickerInstance[], segments: SegmentSpec[],
+  a0: number, a1: number, circumference: number, width: number, ppm: number
+) {
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(0, 0, width * ppm, (a1 - a0) * ppm);
+  ctx.clip();
+  const visible = stickers.filter((s) => stickerOverlapsSegment(s, { a0, a1, printEnabled: true })).sort((a, b) => a.z - b.z);
+  for (const s of visible) {
+    if (s.target.kind !== 'lathe') continue;
+    const anchorId = s.target.segId;
+    const anchor = segments.find((seg) => seg.id === anchorId);
+    const img = getCachedStickerImage(s);
+    if (!anchor?.printEnabled || !img) continue;
+    const sourceCirc = 2 * Math.PI * radiusAtSeg(anchor, s.target.a);
+    const scale = circumference / sourceCirc;
+    const cx = (((s.target.angDeg % 360) + 360) % 360) / 360 * sourceCirc;
+    const extent = stickerExtent(s).x;
+    ctx.save();
+    ctx.scale(scale, 1);
+    const first = Math.ceil((-extent - cx) / sourceCirc);
+    const last = Math.floor((width / scale + extent - cx) / sourceCirc);
+    for (let copy = first; copy <= last; copy++) {
+      drawStickerMM(ctx, img, { x: cx + copy * sourceCirc, y: s.target.a - a0 }, s, ppm);
+    }
+    ctx.restore();
+  }
+  ctx.restore();
 }
 
 /** 端面印刷合成 */

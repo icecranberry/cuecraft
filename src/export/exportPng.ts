@@ -1,6 +1,5 @@
 import type { CueTemplate, SegmentSpec, StickerInstance } from '../core/types';
 import { expandedSegments, faceById } from '../cue/templates';
-import { radiusAtSeg } from '../cue/mapping';
 import {
   buildUnfoldTemplate,
   mmToPx,
@@ -9,7 +8,7 @@ import {
   type UnfoldOptions,
   type UnfoldTemplate
 } from '../cue/unwrap';
-import { drawStickerMM, getCachedStickerImage, getStickerImage } from '../stickers/composite';
+import { drawStickerMM, drawLatheStickers, getCachedStickerImage, getStickerImage } from '../stickers/composite';
 import { useStore } from '../state/store';
 import { canvasToBlob, downloadBlob } from '../state/imageStore';
 
@@ -60,7 +59,7 @@ export async function composeExport(
       if (face) drawFaceBlock(ctx, face, stickers, ppi);
     } else {
       const seg = segs.find((s) => s.id === block.segId);
-      if (seg) drawLatheBlock(ctx, seg, stickers, block, ppi);
+      if (seg) drawLatheBlock(ctx, segs, stickers, block, ppi);
     }
     ctx.restore();
   }
@@ -70,29 +69,14 @@ export async function composeExport(
 
 function drawLatheBlock(
   ctx: CanvasRenderingContext2D,
-  seg: SegmentSpec,
+  segments: SegmentSpec[],
   stickers: StickerInstance[],
   block: UnfoldBlock,
   ppi: number
 ) {
   const pxPerMm = ppi / 25.4;
   const circ = 2 * Math.PI * block.rMid;
-  const mine = stickers.filter((s) => !s.hidden && s.target.kind === 'lathe' && s.target.segId === seg.id);
-  for (const s of mine) {
-    if (s.target.kind !== 'lathe') continue;
-    const img = getCachedStickerImage(s);
-    if (!img) continue;
-    const r = radiusAtSeg(seg, s.target.a);
-    const cx = ((((s.target.angDeg % 360) + 360) % 360) / 360) * (2 * Math.PI * r);
-    const cy = s.target.a - block.a0;
-    // 跨接缝双绘（plan §4.2）
-    const offs: number[] = [0];
-    if (cx < s.w / 2) offs.push(circ);
-    if (cx > circ - s.w / 2) offs.push(-circ);
-    for (const off of offs) {
-      drawStickerMM(ctx, img, { x: cx + off, y: cy }, s, pxPerMm);
-    }
-  }
+  drawLatheStickers(ctx, stickers, segments, block.a0, block.a1, circ, block.wMm, pxPerMm);
 }
 
 function drawFaceBlock(

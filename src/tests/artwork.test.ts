@@ -1,13 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import type { ArtworkCandidate, Asset, DesignSnapshot, StickerInstance } from '../core/types';
-import { applyArtworkToDesign, artworkParts, buildArtworkPrompt, createArtworkScope } from '../cue/artwork';
+import { applyArtworkToDesign, artworkParts, artworkTargetSize, buildArtworkPrompt, createArtworkScope } from '../cue/artwork';
 import { expandedSegments, resolveTemplate } from '../cue/templates';
 import { partFocusDistance } from '../three/framing';
 import { useStore } from '../state/store';
 
 const tpl = resolveTemplate('nineball');
 const empty: DesignSnapshot = { name: '联动测试', cueTemplateId: tpl.id, globalFinish: 'gloss', partOverrides: {}, stickers: [] };
-const scope = createArtworkScope(tpl, empty, 'linked', ['butt-forearm', 'butt-cap', 'ring-deco']);
+const scope = createArtworkScope(tpl, empty, 'linked', ['butt-forearm', 'butt-cap', 'ferrule']);
 const assets: Asset[] = scope.parts.map((p) => ({ id: `asset-${p.id}`, name: p.name, source: 'ai', tags: [], w: 300, h: p.id.startsWith('ring-') ? 30 : 1200, blobKey: `blob:${p.id}`, createdAt: 1 }));
 const candidate: ArtworkCandidate = { id: 'set-1', partAssets: scope.parts.map((p) => ({ partId: p.id, assetId: `asset-${p.id}` })) };
 const makeId = () => `st-${Math.random()}`;
@@ -17,6 +17,26 @@ const sticker = (id: string, partId: string, locked = false): StickerInstance =>
 });
 
 describe('工厂部位联动方案', () => {
+  it('按各部位尺寸和模式计算目标画幅，端面保持正方形安全区', () => {
+    for (const part of scope.parts) {
+      const decal = artworkTargetSize(part, 'decal');
+      expect(decal.wMm).toBeCloseTo(part.wMm * 0.3);
+      expect(decal.hMm).toBeCloseTo(part.hMm * 0.96);
+      expect(artworkTargetSize(part, 'wrap')).toEqual({ wMm: part.wMm, hMm: part.hMm });
+      for (const mode of ['decal', 'wrap'] as const) {
+        const target = artworkTargetSize(part, mode);
+        const prompt = buildArtworkPrompt({ ...scope, textureMode: mode }, part);
+        expect(prompt).toContain(`目标图案尺寸 ${target.wMm.toFixed(1)} mm × ${target.hMm.toFixed(1)} mm`);
+        expect(prompt).toContain(`目标宽高比 ${(target.wMm / target.hMm).toFixed(3)}`);
+        expect(buildArtworkPrompt({ ...scope, textureMode: mode })).not.toContain('目标图案尺寸');
+      }
+    }
+    const faceScope = createArtworkScope(tpl, empty, 'single', ['face-butt']);
+    const face = faceScope.parts[0];
+    expect(artworkTargetSize(face, 'wrap')).toEqual(artworkTargetSize(face, 'decal'));
+    expect(artworkTargetSize(face, 'wrap').wMm).toBeCloseTo(face.wMm * 0.66);
+    expect(buildArtworkPrompt(faceScope, face)).toContain('目标宽高比 1.000');
+  });
   it('整圈模式覆盖整个周长和长度，旧方案仍按原比例放置', () => {
     const wrapScope = { ...scope, textureMode: 'wrap' as const };
     const full = applyArtworkToDesign(empty, wrapScope, candidate, assets, { replace: true }, makeId);
@@ -50,12 +70,12 @@ describe('工厂部位联动方案', () => {
     expect(createArtworkScope(tpl, empty, 'single', ['grip', 'grip']).parts).toHaveLength(1);
   });
 
-  it('前臂、尾段与装饰环具有不同构图职责，携带展开比例', () => {
+  it('前臂、尾段与先角具有不同构图职责，携带展开比例', () => {
     expect(buildArtworkPrompt(scope)).toContain('风格母稿');
     const forearm = scope.parts.find((p) => p.id === 'butt-forearm')!;
-    const ring = scope.parts.find((p) => p.id === 'ring-deco')!;
+    const ring = scope.parts.find((p) => p.id === 'ferrule')!;
     expect(buildArtworkPrompt(scope, forearm)).toContain('长尖插花');
-    expect(buildArtworkPrompt(scope, ring)).toContain('横向环绕');
+    expect(buildArtworkPrompt(scope, ring)).toContain('小型环线');
     expect(buildArtworkPrompt(scope, forearm)).toContain('实际展开宽');
     expect(buildArtworkPrompt(scope, ring)).toContain('参考母稿');
   });

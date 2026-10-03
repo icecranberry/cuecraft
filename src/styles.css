@@ -254,3 +254,17 @@
   ::view-transition-group(*), ::view-transition-old(*), ::view-transition-new(*) { animation: none !important; }
   .main-nav a, .design-rail-tabs button, .wizard-steps button, .wizard-steps button span, .source-switch button, .pattern-card { transition: none; }
 }
+/* Reusable checkbox: native keyboard/focus behavior, compact studio field surface. */
+.studio-checkbox{position:relative;display:inline-flex;align-items:center;gap:8px;min-height:34px;padding:6px 10px;border:1px solid #dce3d5;border-radius:7px;background:#fff;color:#315632;font-size:12px;line-height:20px;cursor:pointer;white-space:nowrap;transition:background-color var(--motion-feedback) var(--motion-ease),border-color var(--motion-feedback) var(--motion-ease)}
+.studio-checkbox>input[type=checkbox]{position:absolute;inset:0;width:100%;height:100%;opacity:0;margin:0;padding:0;cursor:pointer}
+.studio-checkbox-box{display:flex;align-items:center;justify-content:center;flex:none;width:17px;height:17px;border:1px solid #9aaa98;border-radius:4px;background:#fff;color:#fff;pointer-events:none}
+.studio-checkbox-box svg{visibility:hidden}
+.studio-checkbox:has(input:checked){background:#e8f0e2;border-color:#719366}
+.studio-checkbox>input:checked+.studio-checkbox-box{background:#2d7254;border-color:#2d7254}
+.studio-checkbox>input:checked+.studio-checkbox-box svg{visibility:visible}
+.studio-checkbox:has(input:focus-visible){outline:2px solid #256d54;outline-offset:3px}
+.studio-checkbox:has(input:disabled){opacity:.45;cursor:not-allowed}
+.studio-checkbox>input:disabled{cursor:not-allowed}
+.tool-ring-option .studio-checkbox{min-height:30px;padding:4px 10px}
+@media(max-width:640px){.tool-ring-option .studio-checkbox{min-height:38px}.preview-tools-row:has(.tool-ring-option){flex-wrap:wrap;overflow:visible}}
+@media(prefers-reduced-motion:reduce){.studio-checkbox{transition:none}}

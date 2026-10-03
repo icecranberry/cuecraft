@@ -7,12 +7,17 @@ vi.mock('idb-keyval', () => ({
   del: vi.fn(async (key: string) => { db.delete(key); })
 }));
 vi.mock('../state/imageStore', () => ({
+  getBlob: vi.fn(async (key: string) => db.get(key)),
   loadImage: vi.fn(async () => ({ naturalWidth: 64, naturalHeight: 256 })),
   putBlob: vi.fn(async (key: string, value: Blob) => { db.set(key, value); }),
-  removeBlob: vi.fn(), canvasToBlob: vi.fn()
+  removeBlob: vi.fn(), canvasToBlob: vi.fn(async () => new Blob(['processed']))
 }));
 
+vi.mock('../editor/cutout', () => ({ autoRemoveWhiteBg: vi.fn() }));
+
 import { startGeneration, cancelJob, DEFAULT_AI_SETTINGS, loadAiSettings, saveAiSettings, getApiKey, setApiKey } from '../ai/client';
+import { autoRemoveWhiteBg } from '../editor/cutout';
+import { letteringRequest } from '../ai/lettering';
 import { useStore } from '../state/store';
 import { createArtworkScope } from '../cue/artwork';
 import { resolveTemplate } from '../cue/templates';
@@ -38,6 +43,13 @@ beforeEach(() => {
 afterEach(() => { vi.unstubAllGlobals(); vi.clearAllMocks(); });
 
 describe('服务设置保存', () => {
+  it('忽略并在保存时移除旧版固定尺寸', async () => {
+    db.set('settings:ai', { ...DEFAULT_AI_SETTINGS, size: '512x512' });
+    const settings = await loadAiSettings();
+    expect(settings).not.toHaveProperty('size');
+    await saveAiSettings(settings);
+    expect(db.get('settings:ai')).not.toHaveProperty('size');
+  });
   it('密钥独立持久保存，清空后删除，不混入服务设置', async () => {
     await setApiKey(' persisted-test-key ');
     expect(await getApiKey()).toBe('persisted-test-key');
@@ -71,21 +83,69 @@ describe('服务设置保存', () => {
 });
 
 describe('联动生成请求链路', () => {
-  it('整圈模式发送满版提示词且不去白裁边，即使旧草稿保留去白开关', async () => {
+  it('纹字内容和风格传入母稿及各部位的实际图片请求', async () => {
     const fetchMock = vi.fn(async () => successResponse());
     vi.stubGlobal('fetch', fetchMock);
-    const request = input('linked');
-    request.scope!.textureMode = 'wrap';
-    request.removeWhite = true;
+    const request = { ...input('linked'), ...letteringRequest('  一杆入魂 ABC  ', '  行书，银白金属质感  ') };
     const result = await finished((await startGeneration(request, 'generate')).id);
     expect(result.status).toBe('success');
     expect(fetchMock).toHaveBeenCalledTimes(3);
     for (const [, init] of fetchMock.mock.calls as unknown as [string, RequestInit][]) {
       const prompt = init.body instanceof FormData ? String(init.body.get('prompt')) : JSON.parse(init.body as string).prompt;
-      expect(prompt).toContain('整圈包覆');
-      expect(prompt).not.toContain('四周留白');
+      expect(prompt).toContain('文字内容："一杆入魂 ABC"');
+      expect(prompt).toContain('风格：行书，银白金属质感');
+      expect(prompt).toContain('不翻译、不增删');
+      expect(prompt).not.toContain('青绿贝母');
+      expect(prompt).not.toContain('经典插花');
     }
-    expect(useStore.getState().assets.every((a) => !a.originalBlobKey && a.w === 64 && a.h === 256)).toBe(true);
+  });
+
+  it('原生透明图保留白色主体，不再次执行去白底', async () => {
+    const pixels = new Uint8ClampedArray(64 * 256 * 4);
+    pixels.set([255, 255, 255, 255], (8 * 64 + 4) * 4);
+    const ctx = { drawImage: vi.fn(), getImageData: () => ({ data: pixels }), putImageData: vi.fn() };
+    vi.stubGlobal('document', { createElement: () => ({ getContext: () => ctx }) });
+    vi.stubGlobal('fetch', vi.fn(async () => successResponse()));
+    const result = await finished((await startGeneration({ ...input('single'), removeWhite: true }, 'generate')).id);
+    expect(result.status).toBe('success');
+    expect(autoRemoveWhiteBg).not.toHaveBeenCalled();
+    expect(useStore.getState().assets[0]).toMatchObject({ w: 1, h: 1 });
+    expect(pixels[(8 * 64 + 4) * 4 + 3]).toBe(255);
+  });
+
+  it('联动整圈母稿与三部位分别传导尺寸，清理透明外围且不去白', async () => {
+    const pixels = new Uint8ClampedArray(64 * 256 * 4);
+    for (let y = 8; y < 248; y++) for (let x = 20; x < 44; x++) pixels[(y * 64 + x) * 4 + 3] = 255;
+    const drawImage = vi.fn();
+    vi.stubGlobal('document', { createElement: () => ({ getContext: () => ({ drawImage, getImageData: () => ({ data: pixels }) }) }) });
+    const fetchMock = vi.fn(async () => successResponse());
+    vi.stubGlobal('fetch', fetchMock);
+    const request = input('linked');
+    request.scope = createArtworkScope(resolveTemplate('nineball'), useStore.getState().design, 'linked', ['butt-forearm', 'grip', 'butt-cap'], 'wrap');
+    request.removeWhite = true;
+    const result = await finished((await startGeneration(request, 'generate')).id);
+    expect(result.status).toBe('success');
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+    const calls = fetchMock.mock.calls as unknown as [string, RequestInit][];
+    const master = JSON.parse(calls[0][1].body as string);
+    expect(master.background).toBe('opaque');
+    expect(master.prompt).toContain('画幅 1:1');
+    expect(master.prompt).not.toContain('目标图案尺寸');
+    for (let i = 1; i < calls.length; i++) {
+      const body = calls[i][1].body as FormData;
+      const prompt = String(body.get('prompt'));
+      const part = request.scope.parts[i - 1];
+      expect(body.has('size')).toBe(false);
+      expect(body.get('background')).toBe('opaque');
+      expect(prompt).toContain(`目标图案尺寸 ${part.wMm.toFixed(1)} mm × ${part.hMm.toFixed(1)} mm`);
+      expect(prompt).toContain('不继承其画幅');
+      expect(prompt).not.toContain('必须返回带真实 alpha');
+      const asset = useStore.getState().assets.find((a) => a.aiPartId === part.id)!;
+      expect(asset.originalBlobKey).toBeTruthy();
+      expect(asset.w / asset.h).toBeCloseTo(part.wMm / part.hMm, 2);
+    }
+    expect(autoRemoveWhiteBg).not.toHaveBeenCalled();
+    expect(drawImage).toHaveBeenCalledWith(expect.anything(), 20, 8, 24, 240, 0, 0, expect.any(Number), expect.any(Number));
   });
   it('聊天 URL 保持原路径与查询参数，并发送 messages，解析聊天图片', async () => {
     const url = 'https://aikun.uk/v1/chat/completions?channel=image';
@@ -140,19 +200,73 @@ describe('联动生成请求链路', () => {
     expect(url).toBe('/api/image-provider/aikun/v1/images/generations');
     expect(init).toMatchObject({ method: 'POST', headers: { Authorization: 'Bearer test-only-key', 'Content-Type': 'application/json' } });
     const payload = JSON.parse(init.body as string);
-    expect(Object.keys(payload).sort()).toEqual(['model', 'n', 'prompt', 'size']);
-    expect(payload).toMatchObject({ model: 'gpt-image-2', size: '1024x1024', n: 1 });
+    expect(Object.keys(payload).sort()).toEqual(['background', 'model', 'n', 'output_format', 'prompt']);
+    expect(payload).toMatchObject({ model: 'gpt-image-2', n: 1 });
+    expect(payload.prompt).toContain('目标图案尺寸');
+    expect(payload.prompt).toContain('30%');
     expect(payload.prompt).toBeTruthy();
   });
 
-  it('联动方案缺少编辑 URL 时在第一张生图前停止，不猜测编辑地址', async () => {
-    db.set('settings:ai', { ...DEFAULT_AI_SETTINGS, baseUrl: 'https://aikun.uk/v1/images/generations' });
+  it('自定义生图地址无法识别编辑路径时在第一张生图前停止', async () => {
+    db.set('settings:ai', { ...DEFAULT_AI_SETTINGS, baseUrl: 'https://aikun.uk/custom-render' });
     const fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);
     const result = await finished((await startGeneration(input('linked'), 'generate')).id);
     expect(result.status).toBe('failed');
     expect(result.error).toContain('图片编辑 URL');
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it.each(['single', 'linked'] as const)('标准接口自动识别编辑地址并发送 %s 参考图', async (mode) => {
+    db.set('settings:ai', { ...DEFAULT_AI_SETTINGS, baseUrl: 'https://aikun.uk/v1/images/generations?route=image' });
+    db.set('custom:reference', new Blob(['jpeg-reference'], { type: 'image/jpeg' }));
+    useStore.setState({ assets: [{ id: 'ref', blobKey: 'custom:reference', name: 'reference', source: 'upload', tags: [], w: 20, h: 20, createdAt: 1 }] });
+    const fetchMock = vi.fn(async (_url: string, _init: RequestInit) => successResponse());
+    vi.stubGlobal('fetch', fetchMock);
+    const result = await finished((await startGeneration({ ...input(mode), refAssetIds: ['ref'] }, 'edit')).id);
+    expect(result.status).toBe('success');
+    expect(fetchMock).toHaveBeenCalledTimes(mode === 'single' ? 1 : 3);
+    for (const [url, init] of fetchMock.mock.calls) {
+      expect(url).toBe('/api/image-provider/aikun/v1/images/edits?route=image');
+      const body = init.body as FormData;
+      expect(body.has('size')).toBe(false);
+      expect(body.get('background')).toBe('transparent');
+      expect(body.get('output_format')).toBe('png');
+      expect(body.get('prompt')).toContain('真实 alpha');
+    }
+    const reference = (fetchMock.mock.calls[0][1].body as FormData).get('image') as File;
+    expect(reference.type).toBe('image/jpeg');
+    expect(reference.name).toBe('ref.jpg');
+    expect(await reference.text()).toBe('jpeg-reference');
+    if (mode === 'linked') expect((fetchMock.mock.calls[1][1].body as FormData).getAll('image[]')).toHaveLength(2);
+  });
+
+  it.each(['single', 'linked'] as const)('聊天生图接口携带 %s 的参考图与母稿，不需要编辑 URL', async (mode) => {
+    db.set('settings:ai', { ...DEFAULT_AI_SETTINGS, baseUrl: 'https://aikun.uk/v1/chat/completions?channel=image' });
+    db.set('blob:ref', new Blob(['reference'], { type: 'image/png' }));
+    const fetchMock = vi.fn(async (_url: string, _init: RequestInit) => successResponse());
+    vi.stubGlobal('fetch', fetchMock);
+    const result = await finished((await startGeneration({ ...input(mode), refAssetIds: ['ref'] }, 'edit')).id);
+    expect(result.status).toBe('success');
+    for (const [url, init] of fetchMock.mock.calls) {
+      expect(url).toBe('/api/image-provider/aikun/v1/chat/completions?channel=image');
+      const content = JSON.parse(init.body as string).messages[0].content;
+      expect(content[0].text).toContain('真实 alpha');
+      expect(content[1].image_url.url).toMatch(/^data:image\/png;base64,/);
+    }
+    if (mode === 'linked') expect(JSON.parse(fetchMock.mock.calls[1][1].body as string).messages[0].content).toHaveLength(3);
+  });
+
+  it('不带参考图的联动从文生图开始，再将母稿传给自动识别的编辑接口', async () => {
+    db.set('settings:ai', DEFAULT_AI_SETTINGS);
+    const fetchMock = vi.fn(async (_url: string, _init: RequestInit) => successResponse());
+    vi.stubGlobal('fetch', fetchMock);
+    const result = await finished((await startGeneration(input('linked'), 'generate')).id);
+    expect(result.status).toBe('success');
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      'https://api.openai.com/v1/images/generations', 'https://api.openai.com/v1/images/edits', 'https://api.openai.com/v1/images/edits'
+    ]);
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body as string)).toMatchObject({ background: 'transparent', output_format: 'png' });
   });
 
   it('母稿生成后通过 edits 发给每个部位，解析标准 b64_json 并保存完整候选', async () => {

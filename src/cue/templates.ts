@@ -1,4 +1,4 @@
-import type { CueTemplate, SegmentSpec } from '../core/types';
+import type { CueTemplate, SegmentSpec, PartOverride } from '../core/types';
 
 const TOTAL_LEN = 1474;
 const HALF_LEN = 737;
@@ -27,9 +27,9 @@ export const CUE_TEMPLATES: CueTemplate[] = [
     segments: [
       { id: 'shaft', kind: 'shaft', name: '前支（枫木）', a0: TIP_LEN + FERRULE_LEN, a1: HALF_LEN, r0: TIP_DIAMETER / 2, r1: JOINT_DIAMETER / 2, matPreset: 'maple', printEnabled: true },
       { id: 'joint', kind: 'joint', name: '接头（中轮）', a0: HALF_LEN, a1: 750, r0: buttRadius(HALF_LEN), r1: buttRadius(750), matPreset: 'stainless', printEnabled: true },
-      { id: 'ring-joint', kind: 'ring', name: '接头装饰环', a0: 750, a1: 758, r0: buttRadius(750), r1: buttRadius(758), matPreset: 'brass', printEnabled: true },
+      { id: 'ring-joint', kind: 'ring', name: '接头装饰环', a0: 750, a1: 758, r0: buttRadius(750), r1: buttRadius(758), matPreset: 'brass', printEnabled: false },
       { id: 'butt-forearm', kind: 'butt', name: '后把前臂', a0: 758, a1: 1142, r0: buttRadius(758), r1: buttRadius(1142), matPreset: 'maple', printEnabled: true },
-      { id: 'ring-deco', kind: 'ring', name: '握把前装饰环', a0: 1142, a1: 1150, r0: buttRadius(1142), r1: buttRadius(1150), matPreset: 'brass', printEnabled: true },
+      { id: 'ring-deco', kind: 'ring', name: '握把前装饰环', a0: 1142, a1: 1150, r0: buttRadius(1142), r1: buttRadius(1150), matPreset: 'brass', printEnabled: false },
       { id: 'grip', kind: 'grip', name: '握把（皮革缠面）', a0: 1150, a1: 1352, r0: buttRadius(1150), r1: buttRadius(1352), matPreset: 'leather', printEnabled: true },
       { id: 'butt-cap', kind: 'butt', name: '后把尾段（大轮）', a0: 1352, a1: TOTAL_LEN, r0: buttRadius(1352), r1: BUTT_DIAMETER / 2, matPreset: 'ebony', printEnabled: true }
     ],
@@ -71,10 +71,24 @@ export function faceById(t: CueTemplate, id: string) {
   return t.faces.find((f) => f.id === id);
 }
 
-export function resolveTemplate(id: string): CueTemplate {
+export function resolveTemplate(id: string, decorativeRings = true, overrides: Record<string, PartOverride> = {}): CueTemplate {
   // 兼容已保存的旧杆型，统一使用当前唯一尺寸。
   const normalizedId = id === 'snooker' || id === 'chinese8' ? 'nineball' : id;
   const t = CUE_TEMPLATES.find((x) => x.id === normalizedId);
   if (!t) throw new Error(`未知杆型模板: ${id}`);
-  return t;
+  const keepFirst = overrides['ring-joint']?.ringEnabled ?? decorativeRings;
+  const keepLast = overrides['ring-deco']?.ringEnabled ?? decorativeRings;
+  if (keepFirst && keepLast) return t;
+  // Fill the removed rings with the adjacent forearm, preserving length and taper.
+  // The visible joint collar includes the connector sleeve and its decorative band.
+  // Removing only ring-joint leaves a metal ring visible at exactly the same join.
+  const first = t.segments.find((s) => s.id === 'joint')!;
+  const last = t.segments.find((s) => s.id === 'ring-deco')!;
+  return { ...t, segments: t.segments.filter((s) => !((s.id === 'ring-joint' || s.id === 'joint') && !keepFirst) && !(s.id === 'ring-deco' && !keepLast)).map((s) =>
+    s.id === 'butt-forearm' ? { ...s, ...(!keepFirst ? { a0: first.a0, r0: first.r0 } : {}), ...(!keepLast ? { a1: last.a1, r1: last.r1 } : {}) } : s
+  ) };
+}
+
+export function isDecorativeRing(id: string) {
+  return id === 'ring-joint' || id === 'ring-deco';
 }

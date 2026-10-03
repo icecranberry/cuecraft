@@ -38,6 +38,19 @@ export function radiusAtSeg(seg: SegmentSpec, a: number): number {
   return seg.r0 + (seg.r1 - seg.r0) * f;
 }
 
+/** Rotated footprint in unwrapped millimetres, shared by preview and export. */
+export function stickerExtent(s: StickerInstance): { x: number; y: number } {
+  const angle = s.rotDeg * Math.PI / 180;
+  const c = Math.abs(Math.cos(angle)), n = Math.abs(Math.sin(angle));
+  return { x: (s.w * c + s.h * n) / 2, y: (s.w * n + s.h * c) / 2 };
+}
+
+export function stickerOverlapsSegment(s: StickerInstance, seg: Pick<SegmentSpec, 'a0' | 'a1' | 'printEnabled'>): boolean {
+  if (s.hidden || s.target.kind !== 'lathe' || !seg.printEnabled) return false;
+  const extent = stickerExtent(s).y;
+  return s.target.a + extent > seg.a0 && s.target.a - extent < seg.a1;
+}
+
 export interface SurfaceHit {
   /** 命中面所属段（或端面 id） */
   surfaceId: string;
@@ -118,7 +131,9 @@ export function pickSticker(
     for (const s of sorted) {
       if (s.target.kind !== hit.kind) continue;
       if (hit.kind === 'lathe' && s.target.kind === 'lathe') {
-        if (s.target.segId !== hit.surfaceId) continue;
+        const surface = segmentById(t, hit.surfaceId);
+        if (!segmentById(t, s.target.segId)?.printEnabled) continue;
+        if (!surface || !stickerOverlapsSegment(s, surface)) continue;
       }
       if (hit.kind === 'face' && s.target.kind === 'face') {
         if (s.target.faceId !== hit.surfaceId) continue;
@@ -131,16 +146,16 @@ export function pickSticker(
         const r = radiusAtSeg(seg, s.target.a);
         const dAng = angDelta(hit.angDeg!, s.target.angDeg);
         lx = (dAng / 360) * 2 * Math.PI * r;
-        ly = hit.y - c.y;
+        ly = hit.a! - s.target.a;
       } else if (hit.kind === 'face' && s.target.kind === 'face') {
         lx = hit.x - c.x;
         ly = hit.y - c.y;
       } else {
         continue;
       }
-      const local = stickerLocalPoint(0, 0, lx, ly, s.rotDeg);
+      const local = stickerLocalPoint(lx, ly, 0, 0, s.rotDeg);
       if (!pointInRect(local.lx, local.ly, s.w, s.h)) continue;
-      const a = alphaAt(s, local.lx + s.w / 2, local.ly + s.h / 2);
+      const a = alphaAt(s, (s.flipX ? -local.lx : local.lx) + s.w / 2, (s.flipY ? -local.ly : local.ly) + s.h / 2);
       if (a === null || a > 0.08) return s;
     }
   }
@@ -159,9 +174,10 @@ export function moveStickerTo(
     const grabAng = origSeg ? arcXToAng(grabOffset.dx, radiusAtSeg(origSeg, s.target.a)) : 0;
     const seg = segmentById(t, hit.surfaceId);
     if (!seg) return null;
-    const newA = Math.min(seg.a1, Math.max(seg.a0, (hit.a ?? s.target.a) - grabOffset.dy));
+    const printable = expandedSegments(t).filter((part) => part.printEnabled);
+    const newA = Math.min(Math.max(...printable.map((part) => part.a1)), Math.max(Math.min(...printable.map((part) => part.a0)), (hit.a ?? s.target.a) - grabOffset.dy));
     const newAng = normAngle((hit.angDeg ?? 0) - grabAng);
-    return { ...s, target: { kind: 'lathe', segId: seg.id, a: newA, angDeg: newAng } };
+    return { ...s, target: { kind: 'lathe', segId: s.target.segId, a: newA, angDeg: newAng } };
   }
   if (s.target.kind === 'face' && hit.kind === 'face') {
     return {

@@ -29,7 +29,12 @@ beforeAll(async () => {
   }
   local = await createServer({ configFile: false, logLevel: 'silent', appType: 'custom',
     server: { host: '127.0.0.1', port: 0, proxy }, optimizeDeps: { noDiscovery: true, include: [] } });
-  await local.listen();
+  // Vite 5 treats port: 0 as its default port. Bind the underlying HTTP server
+  // directly so concurrent dev servers and Windows reserved ports cannot collide.
+  await new Promise<void>((resolve, reject) => {
+    local.httpServer!.once('error', reject);
+    local.httpServer!.listen(0, '127.0.0.1', resolve);
+  });
   localUrl = `http://127.0.0.1:${(local.httpServer!.address() as AddressInfo).port}/api/image-provider`;
 });
 afterAll(async () => {

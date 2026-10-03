@@ -1,8 +1,8 @@
 import { useLayoutEffect, useRef, useState } from 'react';
-import { Select } from '../ui/components';
+import { Checkbox, Select } from '../ui/components';
 import { Copy, Eye, EyeOff, Lock, LockOpen, Scissors, Trash2 } from 'lucide-react';
 import type { CueTemplate, FinishId, PartOverride, StickerInstance } from '../core/types';
-import { expandedSegments } from '../cue/templates';
+import { expandedSegments, isDecorativeRing, resolveTemplate } from '../cue/templates';
 import { useStore } from '../state/store';
 import { MATERIAL_PRESETS } from '../materials/presets';
 import { openCutoutForSticker } from '../editor/CutoutEditor';
@@ -15,7 +15,7 @@ export function PreviewTools({ tpl }: { tpl: CueTemplate }) {
   const design = useStore((s) => s.design), selection = useStore((s) => s.selection), view = useStore((s) => s.view);
   const watching = useStore((s) => s.interactionMode === 'watch');
   const sticker = selection.kind === 'sticker' ? design.stickers.find((s) => s.id === selection.id) : undefined;
-  const part = selection.kind === 'part' ? [...expandedSegments(tpl), ...tpl.faces].find((p) => p.id === selection.id) : undefined;
+  const part = selection.kind === 'part' ? [...expandedSegments(tpl), ...expandedSegments(resolveTemplate(tpl.id)), ...tpl.faces].find((p) => p.id === selection.id) : undefined;
   const whole = !sticker && !part && view === 'whole';
   const sectionRef = useRef<HTMLElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
@@ -46,6 +46,7 @@ export function PreviewTools({ tpl }: { tpl: CueTemplate }) {
       <label className="tool-field tool-color"><span>叠色</span><input aria-label="部位叠色" type="color" value={design.partOverrides[part.id]?.color ?? '#ffffff'} onChange={(e) => changePart(part.id, { color: e.target.value })} /></label>
       {design.partOverrides[part.id]?.color && <button onClick={() => changePart(part.id, { color: undefined })}>清除叠色</button>}
       <label className="tool-field"><span>漆面</span><Select aria-label="部位漆面" value={design.partOverrides[part.id]?.finish ?? ''} onChange={(e) => changePart(part.id, { finish: (e.target.value || undefined) as FinishId | undefined })}><option value="">跟随整体</option>{finishes.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}</Select></label>
+      {isDecorativeRing(part.id) && <div className="tool-field tool-ring-option"><span>装饰环</span><Checkbox label="保留装饰环" checked={design.partOverrides[part.id]?.ringEnabled ?? design.decorativeRings ?? true} onChange={(e) => changePart(part.id, { ringEnabled: e.target.checked })} /></div>}
     </div> : whole ? <div className="preview-tools-row">
       <div className="tool-field"><span>后把底色</span><div className="tool-swatches">{bases.map((base) => <button key={base.id} title={base.name} aria-label={`底色：${base.name}`} aria-pressed={design.partOverrides['butt-forearm']?.matPreset === base.id} style={{ backgroundColor: base.color }} onClick={() => {
         const st = useStore.getState(); st.pushHistory();

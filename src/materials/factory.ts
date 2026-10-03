@@ -3,12 +3,12 @@ import type { FinishId } from '../core/types';
 import type { MaterialPreset } from './presets';
 import { finishById } from './presets';
 import { presetTextures } from './textures';
+import { woodFragmentShader, woodTransform } from './woodMapping';
 
 // 部件材质工厂：底材平铺贴片（毫米重复）＋ 印刷层透明叠加。
 // 印刷层通过着色器混入漫反射色，透明处露出底材（plan.md §5.1），
 // 与导出合成的印刷内容来自同一份贴纸数据（plan.md §4.3）。
 
-const WOOD_TILE_MM = 34;
 const LEATHER_TILE_MM = 30;
 
 function hexToRgb(hex: string) {
@@ -43,11 +43,16 @@ export interface CueMaterialParams {
   /** 部件周长与长度（mm），用于底材平铺密度 */
   circMm: number;
   lenMm: number;
+  axialOriginMm?: number;
+  surface?: 'lathe' | 'face';
 }
 
 export function createCueMaterial(params: CueMaterialParams): CueMaterialHandle {
   const p = params.preset;
+  let disposed = false;
   const finish = finishById(params.finishId);
+  const wood = p.woodTexture;
+  const woodUv = wood ? woodTransform(wood, params.circMm, params.lenMm, params.axialOriginMm) : undefined;
   // 深色底材提高环境反射，保证近景下轮廓与细节可辨
   const c = hexToRgb(p.color);
   const lum = (0.299 * c.r + 0.587 * c.g + 0.114 * c.b) / 255;
@@ -62,24 +67,48 @@ export function createCueMaterial(params: CueMaterialParams): CueMaterialHandle 
   });
 
   if (p.type === 'wood' || p.type === 'leather') {
-    const tileMm = p.type === 'wood' ? WOOD_TILE_MM : LEATHER_TILE_MM;
     const base = presetTextures(p);
-    const uTiles = Math.max(1, Math.round(params.circMm / tileMm));
-    const vTiles = Math.max(1, Math.round(params.lenMm / tileMm));
-    if (base.map) {
-      const map = base.map.clone();
+    const cloneMap = (source: THREE.Texture) => {
+      const map = source.clone();
+      if (woodUv) {
+        map.rotation = woodUv.rotation;
+        map.repeat.copy(woodUv.repeat);
+        map.offset.copy(woodUv.offset);
+      } else {
+        map.repeat.set(Math.max(1, Math.round(params.circMm / LEATHER_TILE_MM)), Math.max(1, Math.round(params.lenMm / LEATHER_TILE_MM)));
+      }
       map.needsUpdate = true;
-      map.repeat.set(uTiles, vTiles);
-      map.colorSpace = THREE.SRGBColorSpace;
-      mat.map = map;
-    }
-    if (base.normalMap) {
-      const nm = base.normalMap.clone();
-      nm.needsUpdate = true;
-      nm.repeat.set(uTiles, vTiles);
-      mat.normalMap = nm;
-      mat.normalScale = new THREE.Vector2(0.42, 0.42);
-    }
+      return map;
+    };
+    const applyMaps = () => {
+      // The user may already have selected another material while images loaded.
+      if (disposed || !base.map) return;
+      mat.map = cloneMap(base.map);
+      mat.map.colorSpace = THREE.SRGBColorSpace;
+      if (base.normalMap) {
+        mat.normalMap = cloneMap(base.normalMap);
+        const strength = wood?.normalStrength ?? 0.42;
+        mat.normalScale.set(strength, strength);
+        if (wood) {
+          // The lacquer follows only a small fraction of the underlying pores.
+          mat.clearcoatNormalMap = cloneMap(base.normalMap);
+          mat.clearcoatNormalScale.setScalar(wood.coatNormalStrength);
+        }
+      }
+      if (base.roughnessMap) {
+        mat.roughnessMap = cloneMap(base.roughnessMap);
+        if (wood) mat.clearcoatRoughnessMap = cloneMap(base.roughnessMap);
+      }
+      mat.color.set(wood?.tint ?? '#ffffff');
+      if (params.colorOverride) mat.color.multiply(new THREE.Color(params.colorOverride));
+      mat.needsUpdate = true;
+    };
+    if (base.ready) {
+      mat.color.set(p.color);
+      if (params.colorOverride) mat.color.multiply(new THREE.Color(params.colorOverride));
+      if (base.map) applyMaps();
+      else void base.ready.then(applyMaps);
+    } else applyMaps();
   } else if (p.type === 'solid') {
     mat.roughness = p.roughness ?? 0.3;
   }
@@ -100,18 +129,26 @@ export function createCueMaterial(params: CueMaterialParams): CueMaterialHandle 
         '#include <map_fragment>',
         '#include <map_fragment>\nvec4 printTex = texture2D(printMap, vPrintUv);\nfloat printA = printTex.a;\ndiffuseColor.rgb = mix(diffuseColor.rgb, printTex.rgb, printA);'
       );
+    if (woodUv) {
+      shader.uniforms.woodSeamDelta = { value: woodUv.seamDelta };
+      shader.uniforms.woodSeamEnabled = { value: params.surface === 'face' ? 0 : 1 };
+      shader.fragmentShader = woodFragmentShader(shader.fragmentShader);
+    }
   };
-  mat.customProgramCacheKey = () => 'cue-print-overlay';
+  mat.customProgramCacheKey = () => woodUv ? 'cue-print-overlay-wood-pbr-v2' : 'cue-print-overlay';
 
   return {
     material: mat,
     setPrintMap(tex) {
       printUniform.value = tex ?? placeholder();
-      mat.needsUpdate = false;
     },
     dispose() {
+      disposed = true;
       mat.map?.dispose();
       mat.normalMap?.dispose();
+      mat.roughnessMap?.dispose();
+      mat.clearcoatNormalMap?.dispose();
+      mat.clearcoatRoughnessMap?.dispose();
       mat.dispose();
     }
   };

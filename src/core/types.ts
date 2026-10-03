@@ -80,12 +80,15 @@ export interface StickerInstance {
 
 /** 部件属性覆盖（全局默认值 + 部件覆盖，plan.md §3.2） */
 export interface PartOverride {
+  ringEnabled?: boolean;
   matPreset?: string;
   color?: string;
   finish?: FinishId;
 }
 
 export interface DesignSnapshot {
+  /** Older saved designs keep both decorative rings by default. */
+  decorativeRings?: boolean;
   name: string;
   cueTemplateId: string;
   partOverrides: Record<string, PartOverride>;
@@ -157,7 +160,8 @@ export interface GenerationJob {
   createdAt: number;
   updatedAt: number;
   model: string;
-  size: string;
+  /** 兼容旧任务；新任务的尺寸由部位与贴图模式写入提示词。 */
+  size?: string;
   /** 输入快照（不含密钥） */
   input: {
     subject: string;

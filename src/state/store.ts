@@ -104,6 +104,7 @@ interface Store {
   setCueTemplate(id: string): void;
   renameDesign(name: string): void;
   setPartOverride(segId: string, o: PartOverride): void;
+  setDecorativeRings(enabled: boolean): void;
   clearPartOverride(segId: string): void;
   applyFinishAll(f: FinishId): void;
   setGlobalFinish(f: FinishId): void;
@@ -216,6 +217,15 @@ export const useStore = create<Store>((set, get) => ({
         ...s.design,
         partOverrides: { ...s.design.partOverrides, [segId]: { ...s.design.partOverrides[segId], ...o } }
       }
+    }));
+  },
+  setDecorativeRings(enabled) {
+    if ((get().design.decorativeRings !== false) === enabled) return;
+    get().pushHistory();
+    set((s) => ({
+      design: { ...s.design, decorativeRings: enabled },
+      selection: { kind: 'global' }, focusPartId: null, hoverId: null,
+      view: 'whole', viewNonce: s.viewNonce + 1, exportCheckMode: false, exportCheckData: null
     }));
   },
   clearPartOverride(segId) {

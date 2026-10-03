@@ -16,7 +16,7 @@ import { ExportDialog, UnfoldCheckDialog, VersionsDialog } from './Workbench';
 
 export function Workbench() {
   const design = useStore((s) => s.design);
-  const tpl = useMemo(() => resolveTemplate(design.cueTemplateId), [design.cueTemplateId]);
+  const tpl = useMemo(() => resolveTemplate(design.cueTemplateId, design.decorativeRings, design.partOverrides), [design.cueTemplateId, design.decorativeRings, design.partOverrides['ring-joint']?.ringEnabled, design.partOverrides['ring-deco']?.ringEnabled]);
   const selection = useStore((s) => s.selection);
   const placement = useStore((s) => s.placementAssetId);
   const generateOpen = useStore((s) => s.generateOpen);
@@ -41,7 +41,7 @@ export function Workbench() {
   }, [generateOpen]);
   const selectedSticker = selection.kind === 'sticker' ? design.stickers.find((s) => s.id === selection.id) : undefined;
   const partId = selection.kind === 'part' ? selection.id : selectedSticker?.target.kind === 'lathe' ? selectedSticker.target.segId : selectedSticker?.target.faceId;
-  const name = expandedSegments(tpl).find((p) => p.id === partId)?.name ?? tpl.faces.find((p) => p.id === partId)?.name;
+  const name = expandedSegments(resolveTemplate(tpl.id)).find((p) => p.id === partId)?.name ?? tpl.faces.find((p) => p.id === partId)?.name;
   return <div className="studio">
     <div className="studio-heading">
       <div><div className="eyebrow">YOUR CUE, YOUR SIGNATURE</div><h1>设计你的专属球杆<span className="heading-dot">.</span></h1><p>选好部位，说出灵感，看看它上杆的样子。</p></div>
@@ -100,7 +100,7 @@ export function Workbench() {
 function PartNavigator({ tpl, selectedId }: { tpl: CueTemplate; selectedId?: string }) {
   const view = useStore((s) => s.view);
   const watching = useStore((s) => s.interactionMode === 'watch');
-  const parts = [...expandedSegments(tpl), ...tpl.faces];
+  const parts = [...expandedSegments(resolveTemplate(tpl.id)), ...tpl.faces];
   return <aside {...(watching ? { inert: '' } : {})} aria-disabled={watching} className="part-navigator" aria-label="球杆部位选择">
     <header><h2>球杆部位</h2><p>点击选择并聚焦</p></header>
     <button className="part-overview" aria-pressed={!selectedId && view === 'whole'} onClick={() => {

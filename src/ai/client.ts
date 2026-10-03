@@ -1,10 +1,11 @@
 import type { ArtworkCandidate, ArtworkPart, Asset, GenerationJob, JobStatus } from '../core/types';
 import { get as idbGet, set as idbSet, del as idbDel } from 'idb-keyval';
 import { useStore } from '../state/store';
-import { loadImage, canvasToBlob, putBlob } from '../state/imageStore';
+import { loadImage, canvasToBlob, putBlob, getBlob } from '../state/imageStore';
 import { buildArtworkPrompt } from '../cue/artwork';
+import { prepareWrapImage } from './wrapImage';
 import { autoRemoveWhiteBg } from '../editor/cutout';
-import { normalizeProviderUrl, providerUrlError, providerRequestUrl } from './transport';
+import { normalizeProviderUrl, providerUrlError, providerRequestUrl, imageEditUrl, isChatEndpoint } from './transport';
 
 // GPTImage 服务适配层（plan.md §6.1/§10）：
 // 兼容 OpenAI Image API 的生成与编辑；模型 ID 可配置；
@@ -15,7 +16,6 @@ export interface AiSettings {
   editUrl?: string;
   modelsUrl?: string;
   model: string;
-  size: string;
   quality: string;
   n: number;
   timeoutMs: number;
@@ -26,19 +26,20 @@ export const DEFAULT_AI_SETTINGS: AiSettings = {
   editUrl: '',
   modelsUrl: '',
   model: 'gpt-image-1',
-  size: '1024x1024',
   quality: 'auto',
   n: 2,
   timeoutMs: 120000
 };
 
 export async function loadAiSettings(): Promise<AiSettings> {
-  const s = await idbGet<AiSettings>('settings:ai');
+  const stored = await idbGet<AiSettings & { size?: string }>('settings:ai');
+  const { size: _legacySize, ...s } = stored ?? {};
   const settings = { ...DEFAULT_AI_SETTINGS, ...(s ?? {}) };
   return { ...settings, baseUrl: normalizeProviderUrl(settings.baseUrl) };
 }
 
 export async function saveAiSettings(s: AiSettings) {
+  const { size: _legacySize, ...current } = s as AiSettings & { size?: string };
   const addressError = providerUrlError(s.baseUrl);
   if (addressError) throw new Error(addressError);
   for (const [name, address] of [['图片编辑', s.editUrl], ['模型查询', s.modelsUrl]]) {
@@ -47,7 +48,7 @@ export async function saveAiSettings(s: AiSettings) {
       if (error) throw new Error(`${name}地址：${error}`);
     }
   }
-  await idbSet('settings:ai', { ...s, baseUrl: normalizeProviderUrl(s.baseUrl),
+  await idbSet('settings:ai', { ...current, baseUrl: normalizeProviderUrl(s.baseUrl),
     editUrl: s.editUrl?.trim() ?? '', modelsUrl: s.modelsUrl?.trim() ?? '', model: s.model.trim() });
 }
 
@@ -117,6 +118,13 @@ export async function testConnection(settings: AiSettings, apiKey?: string): Pro
   }
 }
 
+function isWrapOutput(input: GenerationJob['input'], part?: ArtworkPart): boolean {
+  const scope = input.scope;
+  if (scope?.textureMode !== 'wrap') return false;
+  const outputPart = part ?? (scope.mode === 'single' ? scope.parts[0] : undefined);
+  return outputPart ? outputPart.kind === 'lathe' : scope.parts.some((p) => p.kind === 'lathe');
+}
+
 export function buildPrompt(input: GenerationJob['input'], part?: ArtworkPart): string {
   const parts: string[] = [];
   if (input.subject) parts.push(`主题：${input.subject}`);
@@ -125,13 +133,13 @@ export function buildPrompt(input: GenerationJob['input'], part?: ArtworkPart): 
   if (input.keep) parts.push(`需要保留：${input.keep}`);
   if (input.avoid) parts.push(`避免出现：${input.avoid}`);
   if (input.scope) parts.push(buildArtworkPrompt(input.scope, part ?? (input.scope.mode === 'single' ? input.scope.parts[0] : undefined)));
-  // 白底生图固定要求（plan §6.2）
-  if (input.scope?.textureMode !== 'wrap' || (part ?? input.scope.parts[0])?.kind === 'face') parts.push('纯白背景，主体完整居中，四周留白，无地面阴影，无产品展示背景，无文字水印。');
+  if (isWrapOutput(input, part)) parts.push('必须返回满版 PNG，主题底色属于印刷图案，整张图从左到右及从上到下铺满，不做透明留白、圆角卡片、居中窄条或产品展示。');
+  else parts.push('必须返回带真实 alpha 通道的透明背景 PNG，背景及图案之间的空隙完全透明；不要白底、实色底、棋盘格或模拟透明背景。保留图案自身的白色细节，无地面阴影，无产品展示背景，无文字水印。');
   return parts.join('；');
 }
 
 function inputHash(j: GenerationJob): string {
-  return JSON.stringify([j.input, j.model, j.size]);
+  return JSON.stringify([j.input, j.model]);
 }
 
 const activeControllers = new Map<string, AbortController>();
@@ -166,7 +174,6 @@ export async function startGeneration(input: GenerationJob['input'], mode: 'gene
     createdAt: Date.now(),
     updatedAt: Date.now(),
     model: settings.model,
-    size: settings.size,
     input: JSON.parse(JSON.stringify(input)),
     prompt: buildPrompt(input),
     resultAssetIds: []
@@ -202,8 +209,10 @@ async function executeJob(job: GenerationJob, settings: AiSettings, apiKey: stri
     return;
   }
   const needsEdit = job.input.refAssetIds.length > 0 || job.input.scope?.mode === 'linked';
-  if (needsEdit && (!settings.editUrl?.trim() || providerUrlError(settings.editUrl))) {
-    st.updateJob(job.id, { status: 'failed', error: '参考图和多部位联动需要图片编辑接口。请在设置中填写服务商提供的完整「图片编辑 URL」，程序不会根据生图地址猜测编辑地址。' });
+  const chat = isChatEndpoint(settings.baseUrl);
+  const editUrl = imageEditUrl(settings.baseUrl, settings.editUrl);
+  if (needsEdit && !chat && (!editUrl || providerUrlError(editUrl))) {
+    st.updateJob(job.id, { status: 'failed', error: '此自定义接口无法确定图片编辑地址，请在设置中填写服务商提供的完整「图片编辑 URL」。' });
     return;
   }
   const ctrl = new AbortController();
@@ -214,30 +223,39 @@ async function executeJob(job: GenerationJob, settings: AiSettings, apiKey: stri
   const checkCancelled = () => {
     if (ctrl.signal.aborted) throw new DOMException('请求已取消', 'AbortError');
   };
-  const requestImage = async (prompt: string, refs: { blob: Blob; name: string }[]): Promise<Blob> => {
+  const requestImage = async (prompt: string, refs: { blob: Blob; name: string }[], part?: ArtworkPart): Promise<Blob> => {
     checkCancelled();
     // 每张图分别计时：联动方案包含多次请求，不能共用单张超时预算。
     timer = setTimeout(() => { timedOut = true; ctrl.abort(); }, settings.timeoutMs);
     try {
+      const background = isWrapOutput(job.input, part) ? 'opaque' : 'transparent';
       let resp: Response;
-      if (refs.length) {
+      if (chat) {
+        const content = refs.length ? [
+          { type: 'text', text: prompt },
+          ...await Promise.all(refs.map(async (r) => ({ type: 'image_url', image_url: { url: await blobDataUrl(r.blob) } })))
+        ] : prompt;
+        checkCancelled();
+        resp = await fetch(providerRequestUrl(settings.baseUrl), {
+          method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
+          body: JSON.stringify({ model: settings.model.trim(), messages: [{ role: 'user', content }], temperature: 0.7 }), signal: ctrl.signal
+        });
+      } else if (refs.length) {
         const fd = new FormData();
         fd.append('model', settings.model.trim());
         fd.append('prompt', prompt);
-        fd.append('size', settings.size);
         fd.append('n', '1');
+        fd.append('background', background);
+        fd.append('output_format', 'png');
         if (settings.quality && settings.quality !== 'auto') fd.append('quality', settings.quality);
         for (const r of refs) fd.append(refs.length === 1 ? 'image' : 'image[]', r.blob, r.name);
-        resp = await fetch(providerRequestUrl(settings.editUrl!), {
+        resp = await fetch(providerRequestUrl(editUrl!), {
           method: 'POST', headers: { Authorization: `Bearer ${key}` }, body: fd, signal: ctrl.signal
         });
       } else {
-        const chat = /\/chat\/completions\/?$/.test(new URL(settings.baseUrl.trim()).pathname);
         resp = await fetch(providerRequestUrl(settings.baseUrl), {
           method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
-          body: JSON.stringify(chat
-            ? { model: settings.model.trim(), messages: [{ role: 'user', content: prompt }], temperature: 0.7 }
-            : { model: settings.model.trim(), prompt, n: 1, size: settings.size,
+          body: JSON.stringify({ model: settings.model.trim(), prompt, n: 1, background, output_format: 'png',
                 ...(settings.quality && settings.quality !== 'auto' ? { quality: settings.quality } : {}) }), signal: ctrl.signal
         });
       }
@@ -275,6 +293,14 @@ async function executeJob(job: GenerationJob, settings: AiSettings, apiKey: stri
     let w = img.naturalWidth;
     let h = img.naturalHeight;
     let processingWarning: string | undefined;
+    const part = job.input.scope?.parts.find((p) => p.id === partId);
+    const wrap = part?.kind === 'lathe' && job.input.scope?.textureMode === 'wrap';
+    if (wrap) {
+      const prepared = await prepareWrapImage(img, part);
+      savedBlob = prepared.blob; w = prepared.w; h = prepared.h;
+      processingWarning = prepared.warning;
+      await putBlob(`original:${id}`, blob);
+    }
     const removeWhite = partId && job.input.removeWhite && !(job.input.scope?.textureMode === 'wrap' && job.input.scope.parts.find((p) => p.id === partId)?.kind === 'lathe');
     if (removeWhite) {
       const canvas = document.createElement('canvas');
@@ -282,7 +308,9 @@ async function executeJob(job: GenerationJob, settings: AiSettings, apiKey: stri
       const ctx = canvas.getContext('2d')!;
       ctx.drawImage(img, 0, 0);
       const pixels = ctx.getImageData(0, 0, w, h);
-      autoRemoveWhiteBg({ data: pixels.data, w, h }, 15);
+      // Preserve white artwork when the provider already returned native transparency.
+      const hasTransparency = pixels.data.some((value, index) => index % 4 === 3 && value < 255);
+      if (!hasTransparency) autoRemoveWhiteBg({ data: pixels.data, w, h }, 15);
       ctx.putImageData(pixels, 0, 0);
       let x0 = w, y0 = h, x1 = -1, y1 = -1;
       for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
@@ -302,14 +330,13 @@ async function executeJob(job: GenerationJob, settings: AiSettings, apiKey: stri
       await putBlob(`original:${id}`, blob);
     }
     checkCancelled();
-    const part = job.input.scope?.parts.find((p) => p.id === partId);
     const asset: Asset = {
       id, name: `${(job.input.subject || 'AI 图案').slice(0, 16)}${part ? ` · ${part.name}` : job.input.scope?.mode === 'linked' ? ' · 风格母稿' : ''}`,
       source: 'ai', tags: ['AI 生成', ...(part ? [part.name] : []), ...(job.input.scope?.mode === 'linked' ? ['联动方案'] : [])],
       w, h, blobKey: `blob:${id}`, createdAt: Date.now(), aiPrompt: prompt, aiModel: settings.model,
       aiJobId: job.id, aiPartId: partId,
       processingWarning,
-      ...(removeWhite ? { originalBlobKey: `original:${id}` } : {})
+      ...(removeWhite || wrap ? { originalBlobKey: `original:${id}` } : {})
     };
     await putBlob(asset.blobKey, savedBlob);
     st.addAsset(asset, savedBlob);
@@ -321,9 +348,11 @@ async function executeJob(job: GenerationJob, settings: AiSettings, apiKey: stri
   try {
     const refBlobs: { blob: Blob; name: string }[] = [];
     for (const id of job.input.refAssetIds) {
-      const b = await idbGet<Blob>(`blob:${id}`);
+      const asset = st.assets.find((a) => a.id === id);
+      const b = await getBlob(asset?.blobKey ?? `blob:${id}`);
       if (!b) throw new Error('参考素材文件缺失，请重新选择参考图');
-      refBlobs.push({ blob: b, name: `${id}.png` });
+      const extension = b.type === 'image/jpeg' ? 'jpg' : b.type === 'image/webp' ? 'webp' : 'png';
+      refBlobs.push({ blob: b, name: `${id}.${extension}` });
     }
     const n = Math.max(1, Math.min(4, job.input.n));
     const scope = job.input.scope;
@@ -351,7 +380,7 @@ async function executeJob(job: GenerationJob, settings: AiSettings, apiKey: stri
       for (const part of scope.parts) {
         progress(`方案 ${i + 1} · ${part.name}`);
         const prompt = buildPrompt(job.input, part);
-        const asset = await saveImage(await requestImage(prompt, sharedRefs), prompt, part.id);
+        const asset = await saveImage(await requestImage(prompt, sharedRefs, part), prompt, part.id);
         candidate.partAssets.push({ partId: part.id, assetId: asset.id });
         done++;
       }
@@ -385,6 +414,13 @@ function b64ToBlob(b64: string): Blob {
   const arr = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
   return new Blob([arr], { type: 'image/png' });
+}
+
+async function blobDataUrl(blob: Blob): Promise<string> {
+  const bytes = new Uint8Array(await blob.arrayBuffer());
+  let binary = '';
+  for (let i = 0; i < bytes.length; i += 8192) binary += String.fromCharCode(...bytes.subarray(i, i + 8192));
+  return `data:${blob.type || 'image/png'};base64,${btoa(binary)}`;
 }
 
 export const STATUS_LABEL: Record<JobStatus, string> = {

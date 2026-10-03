@@ -8,6 +8,19 @@ export function normalizeProviderUrl(address: string): string {
   return address.trim();
 }
 
+export function isChatEndpoint(address: string): boolean {
+  return /\/chat\/completions\/?$/.test(new URL(address.trim()).pathname);
+}
+
+/** Derive only the standard sibling endpoint; explicit custom URLs take priority. */
+export function imageEditUrl(baseUrl: string, explicit?: string): string | undefined {
+  if (explicit?.trim()) return explicit.trim();
+  const url = new URL(baseUrl.trim());
+  if (!/\/images\/generations\/?$/.test(url.pathname)) return undefined;
+  url.pathname = url.pathname.replace(/\/generations\/?$/, '/edits');
+  return url.toString();
+}
+
 export function providerUrlError(address: string): string | null {
   try {
     const url = new URL(normalizeProviderUrl(address));

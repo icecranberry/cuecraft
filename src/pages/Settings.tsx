@@ -74,7 +74,7 @@ export function SettingsPage() {
             <Field label="图片生成 URL" hint="填写完整请求地址，原样使用">
               <TextInput value={s.baseUrl} onChange={(e) => setS({ ...s, baseUrl: e.target.value })} placeholder="https://aikun.uk/v1/images/generations" />
             </Field>
-            <p className="mt-1.5 text-xxs leading-relaxed text-ink-400">直接填写服务商调用示例中的完整 URL。程序不会追加任何路径。以 /chat/completions 结尾的地址使用 messages 格式；服务必须实际返回图片。</p>
+            <p className="mt-1.5 text-xxs leading-relaxed text-ink-400">直接填写服务商调用示例中的完整 URL。生成地址保持原样；标准 /images/generations 的参考图请求自动使用同路径下的 /images/edits。以 /chat/completions 结尾的地址使用 messages 格式；服务必须实际返回图片。</p>
           </div>
           <div className="col-span-2">
             <Field label="服务密钥" hint="保存在当前浏览器本地">
@@ -82,7 +82,7 @@ export function SettingsPage() {
             </Field>
           </div>
           <details className="quiet-details col-span-2"><summary>模型与高级连接选项 <span>按服务商提供的信息填写</span></summary><div className="grid grid-cols-2 gap-3 py-3">
-          <div className="col-span-2"><Field label="图片编辑 URL（可选）" hint="参考图和多部位联动需要，填写完整地址">
+          <div className="col-span-2"><Field label="图片编辑 URL（可选）" hint="标准图片接口自动识别；聊天接口直接携带参考图；自定义编辑地址可在此覆盖">
             <TextInput value={s.editUrl ?? ''} onChange={(e) => setS({ ...s, editUrl: e.target.value })} placeholder="填写服务商提供的完整图片编辑 URL" />
           </Field></div>
           <div className="col-span-2"><Field label="模型查询 URL（可选）" hint="用于检测密钥和可用模型，填写完整地址">
@@ -90,15 +90,6 @@ export function SettingsPage() {
           </Field></div>
           <Field label="图片模型" hint="填写调用示例中的 model">
             <TextInput value={s.model} onChange={(e) => setS({ ...s, model: e.target.value })} placeholder="gpt-image-1" />
-          </Field>
-          <Field label="默认尺寸" hint="图片接口使用；聊天接口由服务商决定">
-            <Select value={s.size} onChange={(e) => setS({ ...s, size: e.target.value })}>
-              {['1024x1024', '1024x1536', '1536x1024', '512x512', 'auto'].map((x) => (
-                <option key={x} value={x}>
-                  {x}
-                </option>
-              ))}
-            </Select>
           </Field>
           <Field label="质量" hint="图片接口使用">
             <Select value={s.quality} onChange={(e) => setS({ ...s, quality: e.target.value })}>

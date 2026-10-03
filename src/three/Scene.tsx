@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Canvas, useFrame, useThree, type ThreeEvent, type Intersection } from '@react-three/fiber';
 import { ContactShadows, Environment, Html, Lightformer, OrbitControls } from '@react-three/drei';
 import type { CueTemplate, DesignSnapshot, FaceSpec, SegmentSpec, StickerInstance } from '../core/types';
-import { expandedSegments, faceById, segmentById } from '../cue/templates';
+import { expandedSegments, faceById, segmentById, resolveTemplate } from '../cue/templates';
 import { buildFaceGeometry, buildSegmentGeometry } from '../cue/geometry';
 import {
   angDelta,
@@ -13,6 +13,7 @@ import {
   pickSticker,
   radiusAtSeg,
   stickerCanvasCenter,
+  stickerOverlapsSegment,
   type SurfaceHit
 } from '../cue/mapping';
 import { presetById } from '../materials/presets';
@@ -461,7 +462,8 @@ function CuePart({
       finishId,
       colorOverride: whiteModel ? '#d8d8d8' : override?.color,
       circMm: 2 * Math.PI * ((seg.r0 + seg.r1) / 2),
-      lenMm: seg.a1 - seg.a0
+      lenMm: seg.a1 - seg.a0,
+      axialOriginMm: seg.a0
     });
     setHandle(h);
     return () => h.dispose();
@@ -473,7 +475,7 @@ function CuePart({
     let dead = false;
     let tex: THREE.CanvasTexture | null = null;
     (async () => {
-      const stickers = design.stickers.filter((s) => !s.hidden && s.target.kind === 'lathe' && s.target.segId === seg.id);
+      const stickers = design.stickers.filter((s) => stickerOverlapsSegment(s, seg));
       await Promise.all(stickers.map(getStickerImage));
       if (dead) return;
       let canvas: HTMLCanvasElement | null = null;
@@ -484,7 +486,7 @@ function CuePart({
           Math.PI * (seg.r0 + seg.r1), seg.a1 - seg.a0, stickers,
           getCachedStickerImage, quality, interactive, gl.capabilities.maxTextureSize,
         );
-        canvas = composeSegmentPrint(seg, stickers, ppm, maxDim).canvas;
+        canvas = composeSegmentPrint(seg, stickers, ppm, maxDim, expandedSegments(tpl)).canvas;
       }
       if (!canvas) { handle.setPrintMap(null); return; }
       if (dead) return;
@@ -495,7 +497,7 @@ function CuePart({
       dead = true;
       tex?.dispose();
     };
-  }, [handle, design.stickers, quality, interactive, gl, seg, exportCheckMode, exportCheckData]);
+  }, [handle, design.stickers, quality, interactive, gl, seg, tpl, exportCheckMode, exportCheckData]);
 
   const selection = useStore((s) => s.selection);
   const hoverId = useStore((s) => s.hoverId);
@@ -558,7 +560,8 @@ function CueFace({
       finishId,
       colorOverride: whiteModel ? '#d8d8d8' : override?.color,
       circMm: face.radius * 2,
-      lenMm: face.radius * 2
+      lenMm: face.radius * 2,
+      surface: 'face'
     });
     setHandle(h);
     return () => h.dispose();
@@ -722,7 +725,7 @@ function CueGroup({ tpl }: { tpl: CueTemplate }) {
         if (!seg) return;
         const r = radiusAtSeg(seg, hitSticker.target.a);
         dx = (angDelta(hit.angDeg!, hitSticker.target.angDeg) / 360) * 2 * Math.PI * r;
-        dy = hit.y - c.y;
+        dy = hit.a! - hitSticker.target.a;
       } else if (hit.kind === 'face' && hitSticker.target.kind === 'face') {
         dx = hit.x - c.x;
         dy = hit.y - c.y;
@@ -832,7 +835,7 @@ function CameraRig({ tpl }: { tpl: CueTemplate }) {
     let target: THREE.Vector3;
     let dist: number;
     if (view === 'focus' && focusPartId) {
-      const seg = segs.find((s) => s.id === focusPartId);
+      const seg = segs.find((s) => s.id === focusPartId) ?? expandedSegments(resolveTemplate(tpl.id)).find((s) => s.id === focusPartId);
       const face = tpl.faces.find((f) => f.id === focusPartId);
       if (seg) {
         const len = Math.max(seg.a1 - seg.a0, 10);

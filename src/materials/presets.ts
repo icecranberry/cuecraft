@@ -7,17 +7,25 @@ export interface MaterialPreset {
   name: string;
   type: 'wood' | 'metal' | 'leather' | 'solid';
   color: string;
-  grainColor?: string;
-  grainScaleMm?: number;
+  woodTexture?: {
+    /** Bundled CC0 scans; provenance is kept beside the images. */
+    id: string;
+    /** Square scan size in mm: one isotropic scale, never squeezed to fit a circumference. */
+    sizeMm: number;
+    horizontal: boolean;
+    normalStrength: number;
+    coatNormalStrength: number;
+    tint?: string;
+  };
   metalness?: number;
   roughness?: number;
 }
 
 export const MATERIAL_PRESETS: MaterialPreset[] = [
-  { id: 'ash', name: '白蜡木', type: 'wood', color: '#d9c69c', grainColor: '#8f7350', grainScaleMm: 22 },
-  { id: 'maple', name: '枫木', type: 'wood', color: '#e6d3ac', grainColor: '#c9ab7c', grainScaleMm: 18 },
-  { id: 'ebony', name: '乌木（深色）', type: 'wood', color: '#2f271f', grainColor: '#171009', grainScaleMm: 26 },
-  { id: 'rosewood', name: '红木', type: 'wood', color: '#6b3a26', grainColor: '#4a2417', grainScaleMm: 24 },
+  { id: 'ash', name: '白蜡木', type: 'wood', color: '#d9c69c', woodTexture: { id: 'ash', sizeMm: 700, horizontal: true, normalStrength: 0.5, coatNormalStrength: 0.07 } },
+  { id: 'maple', name: '枫木', type: 'wood', color: '#e6d3ac', woodTexture: { id: 'maple', sizeMm: 600, horizontal: true, normalStrength: 0.32, coatNormalStrength: 0.045 } },
+  { id: 'ebony', name: '乌木（深色）', type: 'wood', color: '#2f271f', woodTexture: { id: 'ebony', sizeMm: 700, horizontal: true, normalStrength: 0.4, coatNormalStrength: 0.06, tint: '#596570' } },
+  { id: 'rosewood', name: '红木', type: 'wood', color: '#6b3a26', woodTexture: { id: 'rosewood', sizeMm: 850, horizontal: false, normalStrength: 0.45, coatNormalStrength: 0.065 } },
   { id: 'stainless', name: '不锈钢', type: 'metal', color: '#c9ccd2', metalness: 1, roughness: 0.3 },
   { id: 'brass', name: '黄铜', type: 'metal', color: '#c8a44e', metalness: 1, roughness: 0.32 },
   { id: 'blackmetal', name: '黑金（电镀）', type: 'metal', color: '#2a2a2e', metalness: 1, roughness: 0.22 },

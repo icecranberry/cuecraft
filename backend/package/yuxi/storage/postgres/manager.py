@@ -23,7 +23,7 @@ from yuxi.utils import logger
 from yuxi.utils.singleton import SingletonMeta
 
 AGENT_RUN_TERMINAL_STATUS_SQL = ", ".join(f"'{status}'" for status in AGENT_RUN_TERMINAL_STATUSES)
-BUSINESS_SCHEMA_VERSION = 9
+BUSINESS_SCHEMA_VERSION = 12
 KNOWLEDGE_SCHEMA_VERSION = 2
 SCHEMA_VERSION_TABLE = "yuxi_schema_migrations"
 AGENT_RUN_LEASE_SCHEMA_STATEMENTS = (
@@ -510,6 +510,94 @@ class PostgresManager(metaclass=SingletonMeta):
                     INSERT INTO {SCHEMA_VERSION_TABLE} (domain, version, applied_at)
                     VALUES ('business', 9, CURRENT_TIMESTAMP)
                     ON CONFLICT (domain) DO UPDATE SET version = 9, applied_at = EXCLUDED.applied_at
+                """)
+            )
+
+    async def upgrade_cue_schema(self) -> None:
+        """为现有业务数据库创建球杆素材、作品和目录表。"""
+        self._check_initialized()
+        cue_tables = (
+            "cue_assets",
+            "cue_designs",
+            "cue_design_versions",
+            "cue_skus",
+            "cue_proposals",
+            "cue_design_shares",
+            "cue_work_assistants",
+        )
+        async with self.async_engine.begin() as conn:
+            for table_name in cue_tables:
+                await conn.run_sync(
+                    lambda sync_conn, name=table_name: BusinessBase.metadata.tables[name].create(
+                        sync_conn, checkfirst=True
+                    )
+                )
+            await conn.execute(
+                text(
+                    "ALTER TABLE cue_skus ADD COLUMN IF NOT EXISTS created_by VARCHAR(64) "
+                    "REFERENCES users(uid) ON DELETE SET NULL"
+                )
+            )
+            await conn.execute(
+                text(
+                    "ALTER TABLE cue_skus ADD COLUMN IF NOT EXISTS source_design_id VARCHAR(64) "
+                    "REFERENCES cue_designs(id) ON DELETE SET NULL"
+                )
+            )
+            await conn.execute(text("ALTER TABLE cue_skus ADD COLUMN IF NOT EXISTS source_design_version INTEGER"))
+            await conn.execute(
+                text("CREATE INDEX IF NOT EXISTS ix_cue_skus_created_by ON cue_skus (created_by)")
+            )
+            await conn.execute(
+                text("CREATE INDEX IF NOT EXISTS ix_cue_skus_source_design_id ON cue_skus (source_design_id)")
+            )
+            await conn.execute(
+                text(f"""
+                    INSERT INTO {SCHEMA_VERSION_TABLE} (domain, version, applied_at)
+                    VALUES ('business', 10, CURRENT_TIMESTAMP)
+                    ON CONFLICT (domain) DO UPDATE SET version = 10, applied_at = EXCLUDED.applied_at
+                """)
+            )
+
+    async def upgrade_customer_service_schema(self) -> None:
+        """为 Agent 发布快照和客服部署配置增加业务 Schema。"""
+        self._check_initialized()
+        async with self.async_engine.begin() as conn:
+            await conn.execute(
+                text(
+                    "ALTER TABLE agents ADD COLUMN IF NOT EXISTS "
+                    "is_customer_service_snapshot BOOLEAN NOT NULL DEFAULT false"
+                )
+            )
+            await conn.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS ix_agents_is_customer_service_snapshot "
+                    "ON agents (is_customer_service_snapshot)"
+                )
+            )
+            await conn.run_sync(
+                lambda sync_conn: BusinessBase.metadata.tables["customer_service_deployments"].create(
+                    sync_conn, checkfirst=True
+                )
+            )
+            await conn.execute(
+                text(f"""
+                    INSERT INTO {SCHEMA_VERSION_TABLE} (domain, version, applied_at)
+                    VALUES ('business', 11, CURRENT_TIMESTAMP)
+                    ON CONFLICT (domain) DO UPDATE SET version = 11, applied_at = EXCLUDED.applied_at
+                """)
+            )
+
+    async def upgrade_cue_share_schema(self) -> None:
+        """固定球杆分享记录创建时的作品标题。"""
+        self._check_initialized()
+        async with self.async_engine.begin() as conn:
+            await conn.execute(text("ALTER TABLE cue_design_shares ADD COLUMN IF NOT EXISTS design_name VARCHAR(255)"))
+            await conn.execute(
+                text(f"""
+                    INSERT INTO {SCHEMA_VERSION_TABLE} (domain, version, applied_at)
+                    VALUES ('business', 12, CURRENT_TIMESTAMP)
+                    ON CONFLICT (domain) DO UPDATE SET version = 12, applied_at = EXCLUDED.applied_at
                 """)
             )
 

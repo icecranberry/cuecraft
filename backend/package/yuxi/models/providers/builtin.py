@@ -4,6 +4,22 @@ from typing import Any
 
 BUILTIN_PROVIDERS: list[dict[str, Any]] = [
     {
+        "provider_id": "cue-image-relay",
+        "display_name": "球杆图片生成中转站",
+        "provider_type": "openai",
+        "base_url": "https://aikun.uk/v1/chat/completions",
+        "api_key_env": "CUE_IMAGE_API_KEY",
+        "capabilities": ["image"],
+        "enabled_models": [
+            {
+                "id": "gpt-image-2.5-flare",
+                "type": "image",
+                "display_name": "GPT Image 2.5 Flare",
+                "source": "manual",
+            }
+        ],
+    },
+    {
         "provider_id": "fluxionai",
         "display_name": "Fluxion AI",
         "base_url": "https://fluxionai.space/v1",
@@ -36,7 +52,17 @@ BUILTIN_PROVIDERS: list[dict[str, Any]] = [
         "display_name": "DeepSeek",
         "base_url": "https://api.deepseek.com",
         "api_key_env": "DEEPSEEK_API_KEY",
+        "capabilities": ["chat"],
         "models_endpoint": "https://api.deepseek.com/models",
+        "enabled_models": [
+            {
+                "id": "deepseek-flash",
+                "type": "chat",
+                "display_name": "DeepSeek Flash",
+                "source": "manual",
+                "request_body_overrides": {"thinking": {"type": "disabled"}},
+            }
+        ],
     },
     {
         "provider_id": "alibaba-cn",

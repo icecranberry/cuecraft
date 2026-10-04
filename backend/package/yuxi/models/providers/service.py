@@ -20,7 +20,7 @@ from yuxi.models.providers.repository import (
 )
 from yuxi.storage.postgres.models_business import ModelProvider
 
-VALID_MODEL_TYPES = {"chat", "embedding", "rerank"}
+VALID_MODEL_TYPES = {"chat", "embedding", "rerank", "image"}
 VALID_MODEL_SOURCES = {"manual", "remote"}
 VALID_PROVIDER_TYPES = {"openai", "anthropic", "gemini", "openrouter"}
 OPENAI_COMPATIBLE_REQUEST_BODY_PROVIDER_TYPES = {"openai", "openrouter"}
@@ -62,7 +62,7 @@ def _normalize_model_item(model: dict[str, Any]) -> dict[str, Any]:
 
     model_type = str(model.get("type") or "unknown").strip()
     if model_type not in VALID_MODEL_TYPES:
-        raise ValueError(f"启用模型 {model_id} 的 type 必须是 chat、embedding 或 rerank")
+        raise ValueError(f"启用模型 {model_id} 的 type 必须是 chat、embedding、rerank 或 image")
 
     # source 区分手动添加 vs 远端拉取，用于跳过远端清单存在性的视觉警告。
     source = str(model.get("source") or "remote").strip()
@@ -317,7 +317,11 @@ async def ensure_builtin_model_providers_in_db(db: AsyncSession) -> None:
         payload["enabled_models"] = provider_def.get("enabled_models", [])
         payload["headers_json"] = payload.get("headers_json") or {}
         payload["extra_json"] = payload.get("extra_json") or {}
-        payload["is_enabled"] = provider_id == "siliconflow-cn"
+        payload["is_enabled"] = provider_id == "siliconflow-cn" or (
+            provider_id == "cue-image-relay" and bool(os.getenv("CUE_IMAGE_API_KEY"))
+        ) or (
+            provider_id == "deepseek" and bool(os.getenv("DEEPSEEK_API_KEY"))
+        )
         payload["is_builtin"] = True
         payload["created_by"] = "system"
         payload["updated_by"] = "system"
@@ -484,6 +488,13 @@ async def test_model_status_by_spec(spec: str) -> dict:
                 "status": "available" if success else "unavailable",
                 "message": "连接正常" if success else message,
                 "model_type": "rerank",
+            }
+        if info.model_type == "image":
+            return {
+                "spec": spec,
+                "status": "unsupported",
+                "message": "图片模型请在球杆素材库实际生成一张图片验证，连接检查不会产生计费请求",
+                "model_type": "image",
             }
 
         from yuxi.models.chat import select_model

@@ -38,8 +38,8 @@ constraint-dependencies = [
 ]
 
 [[tool.uv.index]]
-name = "tsinghua"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+name = "pypi"
+url = "https://pypi.org/simple"
 default = true
 
 [tool.uv.sources]

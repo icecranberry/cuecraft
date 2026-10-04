@@ -29,6 +29,24 @@ const router = createRouter({
       meta: { requiresAuth: false }
     },
     {
+      path: '/support/:token',
+      name: 'CustomerServicePublic',
+      component: BlankLayout,
+      children: [
+        { path: '', name: 'CustomerServicePublicChat', component: () => import('../views/CustomerServicePublicView.vue'), meta: { requiresAuth: false, public: true } }
+      ],
+      meta: { requiresAuth: false, public: true }
+    },
+    {
+      path: '/cue/share/:token',
+      name: 'CuePublicShare',
+      component: BlankLayout,
+      children: [
+        { path: '', name: 'CuePublicShareView', component: () => import('../views/cue/CuePublicShareView.vue'), meta: { requiresAuth: false, public: true } }
+      ],
+      meta: { requiresAuth: false, public: true }
+    },
+    {
       path: '/auth/oidc/callback', // oidc登录回调页面
       name: 'OIDCCallback',
       component: () => import('@/views/OIDCCallbackView.vue'),
@@ -153,6 +171,30 @@ const router = createRouter({
             }
           ]
         }
+      ]
+    },
+    {
+      path: '/customer-service',
+      name: 'customer-service',
+      component: AppLayout,
+      children: [
+        {
+          path: '',
+          name: 'CustomerService',
+          component: () => import('../views/CustomerServiceView.vue'),
+          meta: { keepAlive: true, requiresAuth: true }
+        }
+      ]
+    },
+    {
+      path: '/cue',
+      name: 'cue',
+      component: AppLayout,
+      children: [
+        { path: 'design', name: 'CueDesign', component: () => import('../views/cue/CueDesignView.vue'), meta: { requiresAuth: true } },
+        { path: 'assets', name: 'CueAssets', component: () => import('../views/cue/CueAssetsView.vue'), meta: { requiresAuth: true } },
+        { path: 'works', name: 'CueWorks', component: () => import('../views/cue/CueWorksView.vue'), meta: { requiresAuth: true } },
+        { path: 'skus', name: 'CueSkus', component: () => import('../views/cue/CueSkusView.vue'), meta: { requiresAuth: true } }
       ]
     },
     {

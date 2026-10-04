@@ -282,7 +282,51 @@ async def test_v072_business_converges_current_schema_idempotently() -> None:
             "ix_scheduled_agent_runs_job_created",
             "ix_scheduled_agent_runs_dispatching",
         }.issubset(scheduled_indexes)
-        assert BUSINESS_SCHEMA_VERSION == 9
+        assert BUSINESS_SCHEMA_VERSION == 12
+    finally:
+        await _drop_isolated_schema(schema, admin_engine, scoped_engine)
+
+
+async def test_cue_and_customer_service_upgrade_from_version_11_idempotently() -> None:
+    """v11 数据库升级到球杆分享标题与客服发布结构时可重复执行。"""
+    schema, admin_engine, scoped_engine, manager = await _create_isolated_manager("pytest_cue_schema")
+
+    try:
+        await manager.create_schema_version_table()
+        await manager.create_business_tables()
+        async with scoped_engine.begin() as connection:
+            await connection.execute(text("ALTER TABLE cue_design_shares DROP COLUMN design_name"))
+        await manager.record_schema_version("business", 11)
+
+        for _ in range(2):
+            await manager.upgrade_cue_schema()
+            await manager.upgrade_customer_service_schema()
+            await manager.upgrade_cue_share_schema()
+
+        async with scoped_engine.connect() as connection:
+            share_columns = await connection.execute(
+                text(
+                    "SELECT column_name FROM information_schema.columns "
+                    "WHERE table_schema = :schema AND table_name = 'cue_design_shares'"
+                ),
+                {"schema": schema},
+            )
+            agent_columns = await connection.execute(
+                text(
+                    "SELECT column_name FROM information_schema.columns "
+                    "WHERE table_schema = :schema AND table_name = 'agents'"
+                ),
+                {"schema": schema},
+            )
+            tables = await connection.execute(
+                text("SELECT table_name FROM information_schema.tables WHERE table_schema = :schema"),
+                {"schema": schema},
+            )
+
+        assert "design_name" in {row.column_name for row in share_columns}
+        assert "is_customer_service_snapshot" in {row.column_name for row in agent_columns}
+        assert "customer_service_deployments" in {row.table_name for row in tables}
+        assert (await manager.get_schema_versions())["business"] == BUSINESS_SCHEMA_VERSION
     finally:
         await _drop_isolated_schema(schema, admin_engine, scoped_engine)
 

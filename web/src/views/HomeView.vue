@@ -108,10 +108,10 @@
         <div class="logo">
           <img
             :src="infoStore.organization.logo"
-            :alt="infoStore.organization.name"
+            :alt="infoStore.organization.name || 'Workbench'"
             class="logo-img"
           />
-          <span class="logo-text">{{ infoStore.organization.name }}</span>
+          <span class="logo-text">{{ infoStore.organization.name || 'Workbench' }}</span>
         </div>
         <div class="header-actions">
           <a

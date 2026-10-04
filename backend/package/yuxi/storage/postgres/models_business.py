@@ -307,6 +307,7 @@ class Agent(Base):
     pics = Column(JSON, nullable=False, default=list)
     config_json = Column(JSON, nullable=False, default=dict)
     share_config = Column(JSON_VALUE, nullable=False)
+    is_customer_service_snapshot = Column(Boolean, nullable=False, default=False, server_default="false", index=True)
 
     is_default = Column(Boolean, nullable=False, default=False, index=True)
     is_subagent = Column(Boolean, nullable=False, default=False, index=True)
@@ -798,7 +799,7 @@ class ModelProvider(Base):
     api_key_env = Column(String(128), nullable=True, comment="API Key 环境变量名")
     api_key = Column(String(500), nullable=True, comment="直接配置的 API Key")
 
-    capabilities = Column(JSON, nullable=False, default=list, comment="支持能力：chat/embedding/rerank")
+    capabilities = Column(JSON, nullable=False, default=list, comment="支持能力：chat/embedding/rerank/image")
     enabled_models = Column(JSON, nullable=False, default=list, comment="已启用模型配置对象")
     headers_json = Column(JSON, nullable=True, comment="额外请求头")
     extra_json = Column(JSON, nullable=True, comment="扩展配置")
@@ -1389,3 +1390,137 @@ Index(
     AgentRunRequest.created_at,
     AgentRunRequest.id,
 )
+
+
+class CueAsset(Base):
+    """共享球杆素材及其不可变图片版本。"""
+
+    __tablename__ = "cue_assets"
+    __table_args__ = (CheckConstraint("kind IN ('blank', 'pattern', 'wrap')", name="ck_cue_assets_kind"),)
+
+    id = Column(String(64), primary_key=True)
+    owner_uid = Column(String(64), ForeignKey("users.uid", ondelete="SET NULL"), nullable=True, index=True)
+    kind = Column(String(16), nullable=False, index=True)
+    name = Column(String(255), nullable=False)
+    description = Column(Text, nullable=False, default="")
+    tags = Column(JSON_VALUE, nullable=False, default=list)
+    specification = Column(JSON_VALUE, nullable=False, default=dict)
+    object_name = Column(String(512), nullable=True)
+    content_type = Column(String(100), nullable=True)
+    width_px = Column(Integer, nullable=True)
+    height_px = Column(Integer, nullable=True)
+    source = Column(String(16), nullable=False, default="upload")
+    created_at = Column(DateTime, nullable=False, default=utc_now_naive)
+
+
+class CueDesign(Base):
+    """用户球杆作品及当前可编辑快照。"""
+
+    __tablename__ = "cue_designs"
+
+    id = Column(String(64), primary_key=True)
+    owner_uid = Column(String(64), ForeignKey("users.uid", ondelete="CASCADE"), nullable=False, index=True)
+    name = Column(String(255), nullable=False)
+    snapshot = Column(JSON_VALUE, nullable=False)
+    version = Column(Integer, nullable=False, default=1)
+    created_at = Column(DateTime, nullable=False, default=utc_now_naive)
+    updated_at = Column(DateTime, nullable=False, default=utc_now_naive, onupdate=utc_now_naive)
+
+
+class CueDesignVersion(Base):
+    """作品的不可变历史快照。"""
+
+    __tablename__ = "cue_design_versions"
+    __table_args__ = (UniqueConstraint("design_id", "version", name="uq_cue_design_versions_design_version"),)
+
+    id = Column(String(64), primary_key=True)
+    design_id = Column(String(64), ForeignKey("cue_designs.id", ondelete="CASCADE"), nullable=False, index=True)
+    version = Column(Integer, nullable=False)
+    snapshot = Column(JSON_VALUE, nullable=False)
+    note = Column(String(255), nullable=False, default="")
+    created_at = Column(DateTime, nullable=False, default=utc_now_naive)
+
+
+class CueSku(Base):
+    """单厂家球杆 SKU 目录。"""
+
+    __tablename__ = "cue_skus"
+
+    code = Column(String(100), primary_key=True)
+    name = Column(String(255), nullable=False)
+    category = Column(String(100), nullable=False, index=True)
+    series = Column(String(100), nullable=False, default="")
+    material = Column(String(255), nullable=False, default="")
+    specification = Column(JSON_VALUE, nullable=False, default=dict)
+    image_object_name = Column(String(512), nullable=True)
+    created_by = Column(String(64), ForeignKey("users.uid", ondelete="SET NULL"), nullable=True, index=True)
+    source_design_id = Column(String(64), ForeignKey("cue_designs.id", ondelete="SET NULL"), nullable=True)
+    source_design_version = Column(Integer, nullable=True)
+    updated_at = Column(DateTime, nullable=False, default=utc_now_naive, onupdate=utc_now_naive)
+
+
+class CueProposal(Base):
+    """AI 提议的一组三套候选方案。"""
+
+    __tablename__ = "cue_proposals"
+
+    id = Column(String(64), primary_key=True)
+    owner_uid = Column(String(64), ForeignKey("users.uid", ondelete="CASCADE"), nullable=False, index=True)
+    request_text = Column(Text, nullable=False)
+    variants = Column(JSON_VALUE, nullable=False)
+    created_at = Column(DateTime, nullable=False, default=utc_now_naive)
+
+
+class CueDesignShare(Base):
+    """固定到某个作品版本的可撤销匿名分享凭据。"""
+
+    __tablename__ = "cue_design_shares"
+
+    id = Column(String(64), primary_key=True)
+    owner_uid = Column(String(64), ForeignKey("users.uid", ondelete="CASCADE"), nullable=False, index=True)
+    design_id = Column(String(64), ForeignKey("cue_designs.id", ondelete="CASCADE"), nullable=False, index=True)
+    design_version = Column(Integer, nullable=False)
+    design_name = Column(String(255), nullable=True)
+    token_hash = Column(String(64), nullable=False, unique=True, index=True)
+    revoked_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, nullable=False, default=utc_now_naive)
+
+
+class CueWorkAssistant(Base):
+    """一个作品对应一条可续用的 AI 对话历史。"""
+
+    __tablename__ = "cue_work_assistants"
+    __table_args__ = (UniqueConstraint("owner_uid", "design_id", name="uq_cue_work_assistants_owner_design"),)
+
+    id = Column(String(64), primary_key=True)
+    owner_uid = Column(String(64), ForeignKey("users.uid", ondelete="CASCADE"), nullable=False, index=True)
+    design_id = Column(String(64), ForeignKey("cue_designs.id", ondelete="CASCADE"), nullable=False, index=True)
+    active_skill_slug = Column(String(128), nullable=False, default="cue-cost-estimation")
+    messages = Column(JSON_VALUE, nullable=False, default=list)
+    created_at = Column(DateTime, nullable=False, default=utc_now_naive)
+    updated_at = Column(DateTime, nullable=False, default=utc_now_naive, onupdate=utc_now_naive)
+
+
+class CustomerServiceDeployment(Base):
+    """智能客服部署的草稿配置、已发布版本和可撤销 token 摘要。"""
+
+    __tablename__ = "customer_service_deployments"
+    __table_args__ = (Index("ix_customer_service_deployments_owner_updated", "owner_uid", "updated_at"),)
+
+    id = Column(String(64), primary_key=True)
+    owner_uid = Column(String(64), ForeignKey("users.uid", ondelete="CASCADE"), nullable=False, index=True)
+    name = Column(String(255), nullable=False)
+    draft_agent_slug = Column(String(80), nullable=False)
+    draft_modes = Column(JSON_VALUE, nullable=False, default=list)
+    draft_iframe_origins = Column(JSON_VALUE, nullable=False, default=list)
+    published_agent_slug = Column(String(80), nullable=True, index=True)
+    published_revision = Column(Integer, nullable=False, default=0)
+    published_modes = Column(JSON_VALUE, nullable=False, default=list)
+    published_iframe_origins = Column(JSON_VALUE, nullable=False, default=list)
+    published_config_hash = Column(String(64), nullable=True)
+    public_token_hash = Column(String(64), nullable=True, unique=True, index=True)
+    token_rotated_at = Column(DateTime, nullable=True)
+    published_at = Column(DateTime, nullable=True)
+    revoked_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, nullable=False, default=utc_now_naive)
+    updated_at = Column(DateTime, nullable=False, default=utc_now_naive, onupdate=utc_now_naive)

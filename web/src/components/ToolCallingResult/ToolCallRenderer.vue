@@ -45,6 +45,7 @@ import AskUserQuestionTool from './tools/AskUserQuestionTool.vue'
 import ExecuteTool from './tools/ExecuteTool.vue'
 import OcrParseFileTool from './tools/OcrParseFileTool.vue'
 import RememberMemoryTool from './tools/RememberMemoryTool.vue'
+import CueProposalTool from './tools/CueProposalTool.vue'
 import { getToolCallId, isHiddenToolCall } from './toolRegistry'
 
 const props = defineProps({
@@ -68,6 +69,7 @@ const TOOL_RENDERERS = {
   ask_user_question: AskUserQuestionTool,
   bash: ExecuteTool,
   calculator: CalculatorTool,
+  cue_save_proposals: CueProposalTool,
   cmd: ExecuteTool,
   edit_file: EditFileTool,
   execute: ExecuteTool,

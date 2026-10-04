@@ -98,7 +98,7 @@
               <X :size="14" />
             </button>
           </div>
-          <p class="star-card-title">给 Yuxi 点个 Star</p>
+          <p class="star-card-title">给 Workbench 点个 Star</p>
           <p class="star-card-description">
             如果这个项目帮到了你，欢迎去 GitHub 点亮一个 Star，让更多人看到它。
           </p>
@@ -110,8 +110,8 @@
           >
             <img
               class="star-card-link-image"
-              src="https://img.shields.io/github/stars/xerrors/Yuxi?label=Yuxi&style=social"
-              alt="GitHub stars for Yuxi"
+              src="https://img.shields.io/github/stars/xerrors/Yuxi?label=Workbench&style=social"
+              alt="GitHub stars for Workbench"
             />
             <ExternalLink :size="13" />
           </a>

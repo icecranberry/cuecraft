@@ -104,7 +104,12 @@ const displayEntries = computed(() =>
 const hasReasoning = computed(() =>
   displayEntries.value.some((entry) => entry.type === 'reasoning')
 )
-const shouldCollapseToolCalls = computed(() => displayEntries.value.length > 0)
+const shouldCollapseToolCalls = computed(() =>
+  displayEntries.value.length > 0 &&
+  !normalizedToolCalls.value.some((item) =>
+    getToolCallId(item) === 'cue_save_proposals' && (item.tool_call_result || item.result)
+  )
+)
 const areToolCallsExpanded = ref(false)
 
 watch(

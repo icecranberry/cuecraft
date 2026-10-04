@@ -45,6 +45,11 @@ _TASK_DEFINITIONS = {
     definition.task_type: definition
     for definition in (
         TaskDefinition(
+            "cue_asset_generation",
+            "yuxi.services.cue_ai_service",
+            "run_cue_asset_generation",
+        ),
+        TaskDefinition(
             "knowledge_ingest",
             "yuxi.services.knowledge_task_service",
             "run_knowledge_ingest",

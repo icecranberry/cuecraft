@@ -153,7 +153,7 @@ class AgentRepository:
 
     async def list_visible(self, *, user: User, include_subagent_definitions: bool = False) -> list[Agent]:
         """列出用户可见的主智能体，只有显式请求时才包含子智能体定义。"""
-        stmt = select(Agent)
+        stmt = select(Agent).where(Agent.is_customer_service_snapshot.is_(False))
         if not include_subagent_definitions:
             stmt = stmt.where(Agent.is_subagent.is_(False))
         result = await self.db.execute(stmt.order_by(Agent.is_default.desc(), Agent.id.asc()))
@@ -164,7 +164,9 @@ class AgentRepository:
 
     async def list_visible_subagents(self, *, user: User) -> list[Agent]:
         result = await self.db.execute(
-            select(Agent).where(Agent.is_subagent.is_(True)).order_by(Agent.name.asc(), Agent.id.asc())
+            select(Agent)
+            .where(Agent.is_subagent.is_(True), Agent.is_customer_service_snapshot.is_(False))
+            .order_by(Agent.name.asc(), Agent.id.asc())
         )
         agents = list(result.scalars().all())
         if user.role == "superadmin":

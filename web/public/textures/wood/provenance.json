@@ -1,0 +1,86 @@
+[
+  {
+    "file": "maple-color.jpg",
+    "source": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/white_maple_veneer/white_maple_veneer_diff_2k.jpg",
+    "sourcePage": "https://polyhaven.com/a/white_maple_veneer",
+    "license": "CC0-1.0",
+    "md5": "3a4572664bea18b46c801d04ff82f2b2"
+  },
+  {
+    "file": "maple-normal.jpg",
+    "source": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/white_maple_veneer/white_maple_veneer_nor_gl_1k.jpg",
+    "sourcePage": "https://polyhaven.com/a/white_maple_veneer",
+    "license": "CC0-1.0",
+    "md5": "b4f8e50d663c93a7e51b4bd4cfce945c"
+  },
+  {
+    "file": "maple-roughness.jpg",
+    "source": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/white_maple_veneer/white_maple_veneer_rough_1k.jpg",
+    "sourcePage": "https://polyhaven.com/a/white_maple_veneer",
+    "license": "CC0-1.0",
+    "md5": "cae64b97e4d49ed4212f692eb2cf560e"
+  },
+  {
+    "file": "ash-color.jpg",
+    "source": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/ash_veneer/ash_veneer_diff_2k.jpg",
+    "sourcePage": "https://polyhaven.com/a/ash_veneer",
+    "license": "CC0-1.0",
+    "md5": "4b720b76d3d3004b68fa4cdb77008865"
+  },
+  {
+    "file": "ash-normal.jpg",
+    "source": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/ash_veneer/ash_veneer_nor_gl_1k.jpg",
+    "sourcePage": "https://polyhaven.com/a/ash_veneer",
+    "license": "CC0-1.0",
+    "md5": "6986a1e827968726d996b76d77f3a2ac"
+  },
+  {
+    "file": "ash-roughness.jpg",
+    "source": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/ash_veneer/ash_veneer_rough_1k.jpg",
+    "sourcePage": "https://polyhaven.com/a/ash_veneer",
+    "license": "CC0-1.0",
+    "md5": "175ba23d74984b0cfb1d9eac636cc255"
+  },
+  {
+    "file": "rosewood-color.jpg",
+    "source": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/rosewood_veneer1/rosewood_veneer1_diff_2k.jpg",
+    "sourcePage": "https://polyhaven.com/a/rosewood_veneer1",
+    "license": "CC0-1.0",
+    "md5": "a02101612b683e33ce6b3d45368160ba"
+  },
+  {
+    "file": "rosewood-normal.jpg",
+    "source": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/rosewood_veneer1/rosewood_veneer1_nor_gl_1k.jpg",
+    "sourcePage": "https://polyhaven.com/a/rosewood_veneer1",
+    "license": "CC0-1.0",
+    "md5": "e5183b44a660e708bfcdfd9726c54c47"
+  },
+  {
+    "file": "rosewood-roughness.jpg",
+    "source": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/rosewood_veneer1/rosewood_veneer1_rough_1k.jpg",
+    "sourcePage": "https://polyhaven.com/a/rosewood_veneer1",
+    "license": "CC0-1.0",
+    "md5": "b71bf78ab6ad4f98d8c08dc713a69e43"
+  },
+  {
+    "file": "ebony-color.jpg",
+    "source": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/dark_wood/dark_wood_diff_2k.jpg",
+    "sourcePage": "https://polyhaven.com/a/dark_wood",
+    "license": "CC0-1.0",
+    "md5": "f6e205a05ff7f1b45c675795b18ea0f5"
+  },
+  {
+    "file": "ebony-normal.jpg",
+    "source": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/dark_wood/dark_wood_nor_gl_1k.jpg",
+    "sourcePage": "https://polyhaven.com/a/dark_wood",
+    "license": "CC0-1.0",
+    "md5": "ca74ffa4c1b7ff5afe7316bbfa87f9a0"
+  },
+  {
+    "file": "ebony-roughness.jpg",
+    "source": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/dark_wood/dark_wood_rough_1k.jpg",
+    "sourcePage": "https://polyhaven.com/a/dark_wood",
+    "license": "CC0-1.0",
+    "md5": "b1acb7bf90785d3945a85eca408dbc6c"
+  }
+]

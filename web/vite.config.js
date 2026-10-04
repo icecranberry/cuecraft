@@ -3,6 +3,7 @@ import path from 'node:path'
 import { fileURLToPath, URL } from 'node:url'
 import { defineConfig, loadEnv } from 'vite'
 import vue from '@vitejs/plugin-vue'
+import react from '@vitejs/plugin-react'
 import { providers } from '@opencode-ai/models/snapshot'
 
 // 快照只在构建进程读取，浏览器只接收展示字段；模型覆盖随锁定依赖更新。
@@ -82,7 +83,7 @@ export default defineConfig(({ mode }) => {
   // eslint-disable-next-line no-undef
   const env = loadEnv(mode, process.cwd(), '')
   return {
-    plugins: [vue(), modelMetadataPlugin, pdfjsCmapsPlugin],
+    plugins: [vue(), react({ include: /src\/cue-engine\/.*\.[jt]sx$/ }), modelMetadataPlugin, pdfjsCmapsPlugin],
     resolve: {
       alias: {
         '@': fileURLToPath(new URL('./src', import.meta.url))

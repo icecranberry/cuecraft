@@ -268,7 +268,8 @@ const remoteModelTypeOptions = computed(() => {
     { label: `全部 ${models.length}`, value: 'all' },
     { label: `对话 ${counts.chat || 0}`, value: 'chat' },
     { label: `向量 ${counts.embedding || 0}`, value: 'embedding' },
-    { label: `重排 ${counts.rerank || 0}`, value: 'rerank' }
+    { label: `重排 ${counts.rerank || 0}`, value: 'rerank' },
+    { label: `图片 ${counts.image || 0}`, value: 'image' }
   ]
 })
 
@@ -276,7 +277,7 @@ const remoteModelTypeOptions = computed(() => {
 // 旧数据 capabilities 为空时回退到全集，保持现状
 const editingModelTypeOptions = computed(() => {
   const caps = currentProviderForModels.value?.capabilities
-  const types = Array.isArray(caps) && caps.length ? caps : ['chat', 'embedding', 'rerank']
+  const types = Array.isArray(caps) && caps.length ? caps : ['chat', 'embedding', 'rerank', 'image']
   return types.map((c) => ({ value: c, label: c }))
 })
 
@@ -1039,6 +1040,7 @@ defineExpose({
             <a-select-option value="chat">chat</a-select-option>
             <a-select-option value="embedding">embedding</a-select-option>
             <a-select-option value="rerank">rerank</a-select-option>
+            <a-select-option value="image">image</a-select-option>
           </a-select>
         </label>
 

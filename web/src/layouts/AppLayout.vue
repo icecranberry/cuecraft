@@ -12,7 +12,12 @@ import {
   PanelLeft,
   PanelLeftOpen,
   MessageCirclePlus,
-  Search
+  Search,
+  PenTool,
+  Image,
+  FolderOpen,
+  List,
+  Bot
 } from '@lucide/vue'
 
 import { useConfigStore } from '@/stores/config'
@@ -149,12 +154,16 @@ onUnmounted(() => {
 const route = useRoute()
 const router = useRouter()
 
+watch(() => route.path, (path) => {
+  if (path === '/cue/design') sidebarCollapsed.value = true
+}, { immediate: true })
+
 const activeTaskCount = computed(() => activeCountRef.value || 0)
 const activeConversationThreadId = computed(() => {
   return route.path.startsWith('/agent') ? currentThreadId.value : null
 })
 const organizationName = computed(() => {
-  return infoStore.organization.name || infoStore.branding.name || 'Yuxi'
+  return infoStore.organization.name || infoStore.branding.name || 'Workbench'
 })
 
 // 下面是导航菜单部分，添加智能体项
@@ -191,6 +200,14 @@ const mainList = computed(() => {
     icon: LibraryBig,
     activeIcon: LibraryBig
   })
+
+  items.push(
+    { name: '球杆设计', path: '/cue/design', icon: PenTool, activeIcon: PenTool },
+    { name: '素材库', path: '/cue/assets', icon: Image, activeIcon: Image },
+    { name: '我的作品', path: '/cue/works', icon: FolderOpen, activeIcon: FolderOpen },
+    { name: '球杆 SKU', path: '/cue/skus', icon: List, activeIcon: List },
+    { name: 'AI 客服', path: '/customer-service', icon: Bot, activeIcon: Bot }
+  )
 
   if (userStore.isSuperAdmin) {
     items.push({

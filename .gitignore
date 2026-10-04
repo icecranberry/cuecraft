@@ -75,6 +75,9 @@ saves_dev
 notebooks
 graphrag
 docker/volumes
+backend/.runtime
+backend/skill-sources
+backend/skill-projections
 docs/vibe
 .cursorrules
 

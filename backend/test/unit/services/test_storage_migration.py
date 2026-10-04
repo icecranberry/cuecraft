@@ -42,6 +42,9 @@ async def test_storage_migration_reads_legacy_schema_before_cutover(monkeypatch)
         upgrade_agent_resource_selection=lambda: _record(
             calls, f"version:business:{storage_migration.BUSINESS_SCHEMA_VERSION}"
         ),
+        upgrade_cue_schema=lambda: _record(calls, "upgrade_cue_schema"),
+        upgrade_customer_service_schema=lambda: _record(calls, "upgrade_customer_service_schema"),
+        upgrade_cue_share_schema=lambda: _record(calls, "upgrade_cue_share_schema"),
         record_schema_version=lambda domain, version: _record(calls, f"version:{domain}:{version}"),
         create_business_tables=lambda: _record(calls, "create_business_tables"),
         create_knowledge_tables=lambda: _record(calls, "create_knowledge_tables"),
@@ -115,6 +118,9 @@ async def test_storage_migration_rejects_v071_schema_without_quiescence_proof(mo
         upgrade_agent_resource_selection=lambda: _record(
             calls, f"version:business:{storage_migration.BUSINESS_SCHEMA_VERSION}"
         ),
+        upgrade_cue_schema=lambda: _record(calls, "upgrade_cue_schema"),
+        upgrade_customer_service_schema=lambda: _record(calls, "upgrade_customer_service_schema"),
+        upgrade_cue_share_schema=lambda: _record(calls, "upgrade_cue_share_schema"),
         record_schema_version=lambda domain, version: _record(calls, f"version:{domain}:{version}"),
         create_business_tables=lambda: _record(calls, "create"),
         create_knowledge_tables=lambda: _record(calls, "create_knowledge"),
@@ -164,6 +170,9 @@ async def test_current_schema_skips_schema_ddl(monkeypatch):
         upgrade_agent_resource_selection=lambda: _record(
             calls, f"version:business:{storage_migration.BUSINESS_SCHEMA_VERSION}"
         ),
+        upgrade_cue_schema=lambda: _record(calls, "upgrade_cue_schema"),
+        upgrade_customer_service_schema=lambda: _record(calls, "upgrade_customer_service_schema"),
+        upgrade_cue_share_schema=lambda: _record(calls, "upgrade_cue_share_schema"),
         record_schema_version=lambda domain, version: _record(calls, f"version:{domain}:{version}"),
         create_business_tables=lambda: _record(calls, "create_business"),
         create_knowledge_tables=lambda: _record(calls, "create_knowledge"),
@@ -260,6 +269,9 @@ async def test_supported_legacy_business_schema_is_converged_and_versioned_as_cu
         upgrade_agent_resource_selection=lambda: _record(
             calls, f"version:business:{storage_migration.BUSINESS_SCHEMA_VERSION}"
         ),
+        upgrade_cue_schema=lambda: _record(calls, "upgrade_cue_schema"),
+        upgrade_customer_service_schema=lambda: _record(calls, "upgrade_customer_service_schema"),
+        upgrade_cue_share_schema=lambda: _record(calls, "upgrade_cue_share_schema"),
         record_schema_version=lambda domain, version: _record(calls, f"version:{domain}:{version}"),
         create_business_tables=lambda: _record(calls, "create_business"),
         create_knowledge_tables=lambda: _record(calls, "create_knowledge"),
@@ -314,6 +326,9 @@ async def test_failed_business_migration_does_not_record_version(monkeypatch):
         upgrade_agent_resource_selection=lambda: _record(
             calls, f"version:business:{storage_migration.BUSINESS_SCHEMA_VERSION}"
         ),
+        upgrade_cue_schema=lambda: _record(calls, "upgrade_cue_schema"),
+        upgrade_customer_service_schema=lambda: _record(calls, "upgrade_customer_service_schema"),
+        upgrade_cue_share_schema=lambda: _record(calls, "upgrade_cue_share_schema"),
         record_schema_version=lambda domain, version: _record(calls, f"version:{domain}:{version}"),
         create_business_tables=lambda: _record(calls, "create_business"),
         create_knowledge_tables=lambda: _record(calls, "create_knowledge"),
@@ -359,6 +374,9 @@ async def test_current_schema_does_not_rewrite_workdir_data(monkeypatch):
         upgrade_agent_resource_selection=lambda: _record(
             calls, f"version:business:{storage_migration.BUSINESS_SCHEMA_VERSION}"
         ),
+        upgrade_cue_schema=lambda: _record(calls, "upgrade_cue_schema"),
+        upgrade_customer_service_schema=lambda: _record(calls, "upgrade_customer_service_schema"),
+        upgrade_cue_share_schema=lambda: _record(calls, "upgrade_cue_share_schema"),
         record_schema_version=lambda domain, version: _record(calls, f"version:{domain}:{version}"),
         create_business_tables=lambda: _record(calls, "create"),
         create_knowledge_tables=lambda: _record(calls, "create_knowledge"),
